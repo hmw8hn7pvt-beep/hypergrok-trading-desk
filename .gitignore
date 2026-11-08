@@ -4,3 +4,4 @@ __pycache__/
 *.py[cod]
 .venv/
 *.log
+research/bybit_linear_public/bundles/
