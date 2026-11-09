@@ -17,3 +17,5 @@ python3 -m bybit_research performance
 `collect` talks only to `https://api.bybit.com` and only through the public GET allowlist in `bybit_research/allowlist.py`. A 403 stops the run. `performance` exits 3 and writes no market result. `verify` exit 0 means the bundle hashes match; it is not a data pass or a strategy pass. `sufficiency` exits 1 while required evidence is unknown.
 
 The recorded run on 2026-11-08T23:46:39.765Z received HTTP 403 from CloudFront before any candle, mark, funding, or identity series was saved. Strict sufficiency failed. SOLUSDT and XRPUSDT remain conditional. No symbol or period was dropped or zero-filled.
+
+The optional live quote display is separate and still refuses strategy performance. Read [LIVE_FEED.md](LIVE_FEED.md). It opens a public WebSocket only with an explicit finite `--seconds` value from 60 to 120.

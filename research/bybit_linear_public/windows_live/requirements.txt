@@ -1,0 +1,4 @@
+# No third-party packages.
+# Requires CPython 3.11 or newer from https://www.python.org/downloads/windows/
+# Do not run pip install. This component uses only the Python standard library.
+# Verified in development with CPython 3.12.3.
