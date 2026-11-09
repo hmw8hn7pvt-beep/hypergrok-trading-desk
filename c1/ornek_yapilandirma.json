@@ -1,0 +1,23 @@
+{
+  "kaynak_kok": "/workspace",
+  "envanter_yolu": "/workspace/hypergrok_v2_plan_20261109/C1_DOSYA_LISTESI.csv",
+  "cikti_ust": "/home/box",
+  "gecici_adi": "GECERSIZ_c1_arsiv_20261110_R3",
+  "dokunulmaz_klasorler": [
+    "GECERSIZ_c1_arsiv_20261110",
+    "GECERSIZ_c1_arsiv_20261110_R2"
+  ],
+  "nihai_adi": "c1_arsiv_20261110",
+  "r5_dizin": "/workspace/trading-desk-research-v1.7.1/research/intraday-r5-20261109/freeze",
+  "manifest_adi": "SHA256SUMS.txt",
+  "disk_yedek_bayt": 2147483648,
+  "kapsam_sabitleri": true,
+  "manifest_sabitleri_zorunlu": true,
+  "mk": {
+    "MK-1": {"sha256": "YAPILANDIRMA_DOSYASINDAN"},
+    "MK-2": {"sha256": "YAPILANDIRMA_DOSYASINDAN"},
+    "MK-3": {"sha256": "YAPILANDIRMA_DOSYASINDAN"},
+    "MK-4": {"sha256": "YAPILANDIRMA_DOSYASINDAN"},
+    "MK-5": {"yol": "/home/box/agent-data/agents/06562474-4f5f-4279-a8d7-9a927d4cdc67/attachments/57c848d4fc3add9dd2fa1c76165c5780cbff8dd9cae338f3e65beec967a4930a.md"}
+  }
+}
