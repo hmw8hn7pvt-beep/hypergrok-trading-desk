@@ -141,9 +141,9 @@ class LiveFeedTests(unittest.TestCase):
         self.feed.on_message(tick("BTCUSDT", "snapshot", {"lastPrice": "20", "markPrice": "21"}, now, 8), now)
         self.feed.on_message(tick("BTCUSDT", "delta", {"lastPrice": "22"}, now, 8), now)
         row = self.feed.status_rows(now)[0]
-        self.assertEqual(row["state"], "AWAITING_SNAPSHOT")
-        self.assertEqual(row["last"], "UNAVAILABLE")
-        self.assertNotIn("20", render_table(self.feed, now))
+        self.assertEqual(row["state"], "LIVE")
+        self.assertEqual(row["last"], "20")
+        self.assertNotIn("22", render_table(self.feed, now))
 
     def test_stale_disconnect_and_partial_rejection(self):
         self.open_feed()
@@ -255,6 +255,54 @@ class LiveFeedTests(unittest.TestCase):
         self.assertEqual(ahead["state"], "STALE")
         self.assertEqual(ahead["last"], "UNAVAILABLE")
         self.assertEqual(ahead["exch_age_ms"], "-60000")
+
+    def test_one_older_cross_sequence_is_dropped_without_clearing_the_book(self):
+        now = self.clock.time_ms()
+        wall = now
+        self.open_feed()
+        self.feed.on_message(ack("SOLUSDT"), now)
+        self.feed.on_message(ack("BTCUSDT"), now)
+        self.feed.on_message(tick("SOLUSDT", "snapshot", {"lastPrice": "87.240", "markPrice": "87.262"}, wall, 100), now)
+        self.feed.on_message(tick("BTCUSDT", "snapshot", {"lastPrice": "74991.60", "markPrice": "74984.97"}, wall, 50), now)
+        self.feed.on_message(tick("SOLUSDT", "delta", {"lastPrice": "1"}, wall, 90), now)
+        row = {item["symbol"]: item for item in self.feed.status_rows(now, wall)}
+        self.assertEqual(row["SOLUSDT"]["state"], "LIVE")
+        self.assertEqual(row["SOLUSDT"]["last"], "87.240")
+        self.assertEqual(row["BTCUSDT"]["last"], "74991.60")
+        self.assertEqual(self.feed.outbound, [])
+        self.feed.on_message(tick("SOLUSDT", "delta", {"lastPrice": "87.300", "markPrice": "87.300"}, wall, 101), now)
+        self.assertEqual(self.feed.status_rows(now, wall)[2]["last"], "87.300")
+
+    def test_repeated_old_sequences_resubscribe_then_accept_only_a_new_snapshot(self):
+        now = self.clock.time_ms()
+        self.open_feed()
+        self.feed.on_message(ack("SOLUSDT"), now)
+        self.feed.on_message(tick("SOLUSDT", "snapshot", {"lastPrice": "87.240", "markPrice": "87.262"}, now, 100), now)
+        for older in (90, 80, 70):
+            self.feed.on_message(tick("SOLUSDT", "delta", {"lastPrice": "1", "markPrice": "1"}, now, older), now)
+        sent = []
+        self.feed.flush(sent.append)
+        self.assertEqual([item["op"] for item in (json.loads(text) for text in sent)], ["unsubscribe", "subscribe"])
+        self.assertEqual(json.loads(sent[0])["args"], ["tickers.SOLUSDT"])
+        self.assertNotIn("order", "".join(sent))
+        self.assertEqual(self.feed.status_rows(now)[2]["last"], "UNAVAILABLE")
+        self.assertNotIn("87.240", render_table(self.feed, now))
+        self.feed.on_message(tick("SOLUSDT", "delta", {"lastPrice": "2", "markPrice": "2"}, now, 1), now)
+        self.assertEqual(self.feed.status_rows(now)[2]["last"], "UNAVAILABLE")
+        self.feed.on_message(tick("SOLUSDT", "snapshot", {"lastPrice": "88", "markPrice": "88.1"}, now, 1), now)
+        row = self.feed.status_rows(now)[2]
+        self.assertEqual((row["state"], row["last"], row["mark"]), ("LIVE", "88", "88.1"))
+
+    def test_resubscribe_budget_requests_one_reconnect(self):
+        clock = ManualClock(0)
+        feed = PublicFeed(LiveConfig())
+        feed.on_open(lambda _text: None, 0)
+        for _ in range(4):
+            feed.on_message(tick("SOLUSDT", "delta", {"lastPrice": "3", "markPrice": "3"}, clock.wall_ms(), 1), clock.time_ms())
+            clock.advance(2_000)
+        self.assertTrue(feed.need_reconnect)
+        self.assertEqual(feed.resubscribe_count["SOLUSDT"], 3)
+        self.assertEqual(feed.status_rows(clock.time_ms(), clock.wall_ms())[2]["last"], "UNAVAILABLE")
 
     def test_finite_run_shuts_down_without_a_socket(self):
         clock = ManualClock(0)

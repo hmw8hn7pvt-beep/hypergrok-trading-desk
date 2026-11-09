@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
 CONDITIONAL = frozenset({"SOLUSDT", "XRPUSDT"})
 PUBLIC_LINEAR_URL = "wss://stream.bybit.com/v5/public/linear"
-ALLOWED_OPS = frozenset({"subscribe", "ping"})
+ALLOWED_OPS = frozenset({"subscribe", "unsubscribe", "ping"})
 PRICE_RE = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 SECRET_MARKERS = ("api_key", "api-key", "secret", "signature", "bearer", "passphrase")
 
@@ -82,8 +82,8 @@ def client_message(op: str, args: list[str] | None = None, req_id: str | None = 
             raise LiveRefused("req_id must be one of the four fixed symbols")
         body["req_id"] = req_id
     if args is not None:
-        if op != "subscribe":
-            raise LiveRefused("only subscribe accepts topic args")
+        if op not in ("subscribe", "unsubscribe"):
+            raise LiveRefused("only subscribe and unsubscribe accept topic args")
         cleaned = []
         for arg in args:
             if not isinstance(arg, str) or not arg.startswith("tickers."):
@@ -175,6 +175,11 @@ class PublicFeed:
         self.ping_sent_ms = None
         self.backoff_index = 0
         self.reconnects = 0
+        self.outbound = []
+        self.need_reconnect = False
+        self.resubscribe_count = {symbol: 0 for symbol in self.config.symbols}
+        self.last_resubscribe_ms = {symbol: -10**12 for symbol in self.config.symbols}
+        self.consecutive_unusable = {symbol: 0 for symbol in self.config.symbols}
 
     def on_open(self, send, now_ms: int) -> None:
         self.phase = "open"
@@ -368,6 +373,8 @@ class PublicFeed:
             book.cs = None
             book.subscription = "open"
             book.reset_reason = ""
+            self.consecutive_unusable[symbol] = 0
+            self.resubscribe_count[symbol] = 0
             self._merge_items(book, items, replace=True)
             book.cs = cs
             book.exchange_ts = ts
@@ -376,26 +383,60 @@ class PublicFeed:
             self.note_session_established()
             return
         if not book.snapshot:
-            book.reset_reason = "delta_before_snapshot"
             self.log.emit(now_ms, symbol, "awaiting_snapshot", "delta ignored until a snapshot")
+            self._request_resubscribe(symbol, now_ms, "delta without snapshot")
             return
-        if cs is not None and book.cs is not None and cs <= book.cs:
-            book.fields = {}
-            book.snapshot = False
-            book.cs = None
-            book.exchange_ts = None
-            book.received_ms = None
-            book.ack_ms = now_ms
-            book.subscription = "awaiting_snapshot"
-            book.reset_reason = "cross_sequence_reset"
-            self.log.emit(now_ms, symbol, "awaiting_snapshot", "cross sequence moved backward; book reset")
+        if cs is not None and book.cs is not None and cs < book.cs:
+            self.consecutive_unusable[symbol] += 1
+            self.log.emit(now_ms, f"{symbol}:sequence", "dropped_old", f"cross sequence not applied {cs}<{book.cs}")
+            if self.consecutive_unusable[symbol] >= 3:
+                self._request_resubscribe(symbol, now_ms, "repeated non-increasing cross sequence")
             return
+        if cs is not None and book.cs is not None and cs == book.cs:
+            self.log.emit(now_ms, f"{symbol}:sequence", "dropped_duplicate", f"cross sequence repeated {cs}")
+            return
+        if cs is None:
+            self.consecutive_unusable[symbol] += 1
+            self.log.emit(now_ms, f"{symbol}:sequence", "dropped_missing", "delta had no cross sequence")
+            if self.consecutive_unusable[symbol] >= 3:
+                self._request_resubscribe(symbol, now_ms, "deltas without a cross sequence")
+            return
+        self.consecutive_unusable[symbol] = 0
         self._merge_items(book, items, replace=False)
         if cs is not None:
             book.cs = cs
         book.exchange_ts = ts
         book.received_ms = now_ms
         self.log.emit(now_ms, f"{symbol}:quote", "delta", "delta merged")
+
+    def flush(self, send) -> None:
+        while self.outbound:
+            send(self.outbound.pop(0))
+
+    def _request_resubscribe(self, symbol: str, now_ms: int, reason: str) -> None:
+        """Ask Bybit for a new snapshot. One old frame does not clear the book."""
+        if now_ms - self.last_resubscribe_ms[symbol] < 2_000:
+            return
+        if self.resubscribe_count[symbol] >= 3:
+            self.need_reconnect = True
+            self.log.emit(now_ms, symbol, "resync_reconnect", reason)
+            return
+        self.resubscribe_count[symbol] += 1
+        self.last_resubscribe_ms[symbol] = now_ms
+        self.consecutive_unusable[symbol] = 0
+        book = self.books[symbol]
+        book.snapshot = False
+        book.fields = {}
+        book.cs = None
+        book.exchange_ts = None
+        book.received_ms = None
+        book.subscription = "awaiting_snapshot"
+        book.ack_ms = now_ms
+        book.reset_reason = reason
+        topic = f"tickers.{symbol}"
+        self.outbound.append(client_message("unsubscribe", [topic], req_id=symbol))
+        self.outbound.append(client_message("subscribe", [topic], req_id=symbol))
+        self.log.emit(now_ms, symbol, "resubscribe", reason)
 
     def _merge_items(self, book: SymbolBook, items: list[dict], replace: bool) -> None:
         for item in items:
@@ -579,6 +620,12 @@ def run_feed(feed: PublicFeed, transport, clock, status_every_ms: int = 1000, em
                 break
             if incoming:
                 feed.on_message(incoming, clock.time_ms())
+                feed.flush(transport.send)
+            if feed.need_reconnect:
+                feed.need_reconnect = False
+                transport.close()
+                feed.on_disconnect(clock.time_ms(), "resubscribe budget exhausted")
+                break
             now = clock.time_ms()
             if expired(now):
                 break
