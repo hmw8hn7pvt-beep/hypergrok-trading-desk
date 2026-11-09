@@ -6,7 +6,7 @@
 4. `tarfile.TarFile` göreli arşiv adına içeride `os.path.abspath` uygular. Uygulama bu mutlak adı açmaz, yazmaz ve doğrulamaz. Veri, R2 tanıtıcısından açılan `fileobj` üzerinden gider.
 5. Aynı inode üzerinde boyut ve `mtime_ns` korunarak yapılan eşzamanlı içerik değişikliği, okuma penceresine düşmezse yalnız hash farkıyla yakalanır. Kartın risk (b) ve (j) maddeleri geçerlidir: bütün yarışlar garanti edilmez.
 6. Symlink metni envanterden gelir. Uzunluk, güvenli zincirin `st_size` değeriyle karşılaştırılır. Metin kaynaktan bayt olarak okunmaz; raporda dolaylı doğrulama yazar.
-7. A-ek ve MK-5 için open, read, stat, lstat, hash, arşiv ve envantere ekleme yoktur. Bu yolların diskte var olup olmadığı da yoklanmaz; yoklamak yasağı delerdi.
+7. A-ek ve MK-5 için open, read, stat, lstat, hash, arşiv ve envantere ekleme yoktur. Bu yolların diskte var olup olmadığı da yoklanmaz; yoklamak yasağı delerdi. MK-5 çıktı üstünün altında ve teslim klasörlerinin dışında durabilir. Bu yerleşim yolu açmayı serbest bırakmaz.
 8. Dizin listesi yapılmaz. İşlem listesinde olmayan fazla dosya aranmaz. Raporda bu cümle durur.
 9. `O_NOATIME` dosya sahibi veya `CAP_FOWNER` ister. İzin yoksa koşul 5 ile durulur; başka açılış yöntemi denenmez.
 10. `renameat2` ve `RENAME_NOREPLACE` Linux'a özgüdür. Çağrı yoksa veya başarısızsa koşul 1 ya da 12 ile durulur. `os.rename` kullanılmaz.

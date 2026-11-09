@@ -26,6 +26,7 @@ from c1.config import (
     MANIFEST_BOYUT,
     MANIFEST_SHA256,
     MK_ADLARI,
+    ONAY_METIN,
     NIHAI_ADI,
     PYTHON_GERCEK,
     R1_ADI,
@@ -37,7 +38,9 @@ from c1.config import (
 )
 from c1.errors import C1Error
 from c1.main import calistir, main
-from c1.tests.destek import Dosya, _temizle, hazirla
+from c1.tests.destek import Dosya, MK5_GOVDE_EK, _temizle, hazirla, kur_gercek_duzen
+
+GERCEK_MK5 = "/home/box/" + MK5_GOVDE_EK
 
 KOK_BELLEK = "/tmp/c1bellek"
 ARC_KOK = "tmp/c1bellek/"
@@ -530,7 +533,7 @@ class C1Testleri(unittest.TestCase):
             anahtar: Mk(anahtar, GERCEK_R5_DIZIN + "/" + MK_ADLARI[anahtar], "0" * 64)
             for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4")
         }
-        mk["MK-5"] = Mk("MK-5", "/var/lib/c1-mk5-ornek/bot-eki.md", None)
+        mk["MK-5"] = Mk("MK-5", GERCEK_MK5, None)
         cfg = Yapilandirma(
             mod=Mod.GERCEK,
             onay="ONAY C-1",
@@ -602,6 +605,212 @@ class C1Testleri(unittest.TestCase):
             if ad != "config.py":
                 self.assertNotIn('"/workspace"', metin, ad)
                 self.assertNotIn('"/home/box"', metin, ad)
+
+
+class SyscallKalkan:
+    """open/stat/mkdir ve dir_fd birleşimini yasak köklere karşı izler."""
+
+    def __init__(self, kokler: list[str], bilesenler: set[str]) -> None:
+        self.kokler = kokler
+        self.bilesenler = bilesenler
+        self._eski: dict[str, object] = {}
+
+    def __enter__(self) -> "SyscallKalkan":
+        import builtins
+
+        self._eski = {
+            "open": os.open,
+            "stat": os.stat,
+            "lstat": os.lstat,
+            "listdir": os.listdir,
+            "scandir": os.scandir,
+            "readlink": os.readlink,
+            "mkdir": os.mkdir,
+            "unlink": os.unlink,
+            "rmdir": os.rmdir,
+            "chmod": os.chmod,
+            "access": os.access,
+            "bopen": builtins.open,
+            "rename": secure_fs.rename_noreplace,
+        }
+        for ad in ("open", "stat", "lstat", "listdir", "scandir", "readlink", "mkdir", "unlink", "rmdir", "chmod", "access"):
+            setattr(os, ad, self._sar(ad, self._eski[ad]))
+        builtins.open = self._sar("builtins.open", self._eski["bopen"])
+        secure_fs.rename_noreplace = self._rename_sar()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        import builtins
+
+        for ad, fn in self._eski.items():
+            if ad == "bopen":
+                builtins.open = fn
+            elif ad == "rename":
+                secure_fs.rename_noreplace = fn
+            else:
+                setattr(os, ad, fn)
+
+    def _ihlal(self, op: str, yol: str) -> None:
+        if yol in self.bilesenler:
+            raise AssertionError(f"{op} dokunulmaz bileşen: {yol}")
+        for kok in self.kokler:
+            if yol == kok or yol.startswith(kok + "/"):
+                raise AssertionError(f"{op} dokunulmaz yol: {yol}")
+
+    def _adaylar(self, path, kwargs) -> list[str]:
+        bulunan = []
+        if isinstance(path, (str, bytes)):
+            bulunan.append(os.fsdecode(path))
+        dfd = kwargs.get("dir_fd")
+        if isinstance(dfd, int) and dfd >= 0 and isinstance(path, (str, bytes)):
+            try:
+                temel = self._eski["readlink"](f"/proc/self/fd/{dfd}")
+            except OSError:
+                temel = ""
+            if temel:
+                bulunan.append(os.path.join(temel, os.fsdecode(path)))
+        return bulunan
+
+    def _sar(self, op: str, fn):
+        def ic(*a, **k):
+            yol = a[0] if a else k.get("path", "")
+            for aday in self._adaylar(yol, k):
+                self._ihlal(op, aday)
+            return fn(*a, **k)
+
+        return ic
+
+    def _rename_sar(self):
+        def ic(eski_fd, eski, yeni_fd, yeni):
+            for ad, dfd in ((eski, eski_fd), (yeni, yeni_fd)):
+                self._ihlal("renameat2", ad)
+                try:
+                    temel = self._eski["readlink"](f"/proc/self/fd/{dfd}")
+                except OSError:
+                    temel = ""
+                if temel:
+                    self._ihlal("renameat2", os.path.join(temel, ad))
+            return self._eski["rename"](eski_fd, eski, yeni_fd, yeni)
+
+        return ic
+
+
+class GercekDuzenTestleri(unittest.TestCase):
+    def setUp(self) -> None:
+        self._ac = secure_fs.ac_cikti_ust
+
+    def tearDown(self) -> None:
+        secure_fs.ac_cikti_ust = self._ac
+
+    def _cfg(self, mk5: str) -> Yapilandirma:
+        mk = {
+            anahtar: Mk(anahtar, GERCEK_R5_DIZIN + "/" + MK_ADLARI[anahtar], "0" * 64)
+            for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4")
+        }
+        mk["MK-5"] = Mk("MK-5", mk5, None)
+        return Yapilandirma(
+            mod=Mod.GERCEK,
+            onay=ONAY_METIN,
+            kaynak_kok=GERCEK_KAYNAK_KOK,
+            envanter_yolu=GERCEK_ENVANTER,
+            cikti_ust=GERCEK_CIKTI_UST,
+            r1_adi=R1_ADI,
+            r2_adi=R2_ADI,
+            nihai_adi=NIHAI_ADI,
+            r5_dizin=GERCEK_R5_DIZIN,
+            manifest_adi=MANIFEST_ADI,
+            mk=mk,
+            kapsam_sabitleri=True,
+            manifest_sabitleri_zorunlu=True,
+            disk_yedek_bayt=DISK_YEDEK_BAYT,
+        )
+
+    def test_35_mk5_cikti_ustunde_r1_r2_nihai_disi(self) -> None:
+        cfg = self._cfg(GERCEK_MK5)
+        self.assertIn(GERCEK_MK5, cfg.dokunulmaz)
+        self.assertTrue(GERCEK_MK5.startswith(GERCEK_CIKTI_UST + "/"))
+        for ad in (R1_ADI, R2_ADI, NIHAI_ADI):
+            with self.assertRaises(C1Error) as cm:
+                self._cfg(GERCEK_CIKTI_UST + "/" + ad + "/ek.md")
+            self.assertIn("R1, R2 veya nihai", cm.exception.aciklama)
+        with self.assertRaises(C1Error) as cm:
+            self._cfg(GERCEK_KAYNAK_KOK + "/bot-eki.md")
+        self.assertIn("kaynak kökü", cm.exception.aciklama)
+
+        kok = tempfile.mkdtemp(prefix="c1json_")
+        self.addCleanup(_temizle, kok)
+        json_yol = os.path.join(kok, "var/tmp/c1_r11_yapilandirma/c1_gercek.json")
+        os.makedirs(os.path.dirname(json_yol), 0o700)
+        govde = {
+            "kaynak_kok": GERCEK_KAYNAK_KOK,
+            "envanter_yolu": GERCEK_ENVANTER,
+            "cikti_ust": GERCEK_CIKTI_UST,
+            "r1_adi": R1_ADI,
+            "r2_adi": R2_ADI,
+            "nihai_adi": NIHAI_ADI,
+            "r5_dizin": GERCEK_R5_DIZIN,
+            "manifest_adi": MANIFEST_ADI,
+            "mk": {
+                "MK-1": {"sha256": "0" * 64},
+                "MK-2": {"sha256": "0" * 64},
+                "MK-3": {"sha256": "0" * 64},
+                "MK-4": {"sha256": "0" * 64},
+                "MK-5": {"yol": GERCEK_MK5},
+            },
+        }
+        with open(json_yol, "w", encoding="utf-8") as fh:
+            fh.write(__import__("json").dumps(govde))
+        yuklenen = yukle(json_yol, gercek=True, onay=ONAY_METIN, izole=False)
+        self.assertTrue(yuklenen.kapsam_sabitleri)
+        self.assertTrue(yuklenen.manifest_sabitleri_zorunlu)
+        self.assertEqual(yuklenen.disk_yedek_bayt, DISK_YEDEK_BAYT)
+        self.assertEqual(yuklenen.envanter_yolu, GERCEK_ENVANTER)
+        self.assertEqual(yuklenen.r5_dizin, GERCEK_R5_DIZIN)
+        self.assertEqual(yuklenen.mk["MK-5"].yol, GERCEK_MK5)
+        govde["kapsam_sabitleri"] = False
+        with open(json_yol, "w", encoding="utf-8") as fh:
+            fh.write(__import__("json").dumps(govde))
+        with self.assertRaises(C1Error) as cm:
+            yukle(json_yol, gercek=True, onay=ONAY_METIN, izole=False)
+        self.assertIn("kapsam", cm.exception.aciklama)
+
+        def patlat(*_a, **_k):
+            raise AssertionError("gerçek kök açıldı")
+
+        secure_fs.ac_cikti_ust = patlat
+        if platform.python_version() != PYTHON_GERCEK:
+            with self.assertRaises(C1Error) as cm:
+                calistir(yuklenen)
+            self.assertEqual(cm.exception.kosul, 1)
+
+    def test_36_gercek_duzen_uctan_uca(self) -> None:
+        kok = tempfile.mkdtemp(prefix="c1duzen_")
+        self.addCleanup(_temizle, kok)
+        sahne = kur_gercek_duzen(kok)
+        self.assertTrue(sahne.mk5.startswith(sahne.cikti + "/agent-data/"))
+        self.assertTrue(sahne.ekstra["json"].endswith("var/tmp/c1_r11_yapilandirma/c1_gercek.json"))
+        once_mk5 = os.lstat(sahne.mk5)
+        once_agent = os.lstat(sahne.ekstra["agent_data"])
+        once_r1 = os.lstat(sahne.ekstra["r1"])
+        mk5_icerik = _oku(sahne.mk5, True)
+        bilesen = {"agent-data", "attachments", os.path.basename(sahne.mk5)}
+        with SyscallKalkan([sahne.ekstra["agent_data"], sahne.ekstra["r1"], sahne.mk5], bilesen):
+            sonuc = calistir(sahne.cfg)
+        self.assertEqual(sonuc.durum, "TESLIM EDILDI", sonuc.ozet)
+        self.assertIsNone(sonuc.k5_hata)
+        self.assertEqual(_oku(sahne.mk5, True), mk5_icerik)
+        sonra_mk5 = os.lstat(sahne.mk5)
+        sonra_agent = os.lstat(sahne.ekstra["agent_data"])
+        sonra_r1 = os.lstat(sahne.ekstra["r1"])
+        self.assertEqual((once_mk5.st_dev, once_mk5.st_ino, once_mk5.st_mtime_ns), (sonra_mk5.st_dev, sonra_mk5.st_ino, sonra_mk5.st_mtime_ns))
+        self.assertEqual((once_agent.st_dev, once_agent.st_ino, once_agent.st_mtime_ns), (sonra_agent.st_dev, sonra_agent.st_ino, sonra_agent.st_mtime_ns))
+        self.assertEqual((once_r1.st_dev, once_r1.st_ino), (sonra_r1.st_dev, sonra_r1.st_ino))
+        self.assertEqual(_oku(os.path.join(sahne.ekstra["r1"], "iz.txt"), True), b"KORU")
+        rapor = _oku(os.path.join(sahne.nihai(), "R5_FREEZE_HASH.txt"))
+        self.assertIn("MK-5 yalnız metinsel yol", rapor)
+        self.assertIn(sahne.mk5, rapor)
+        with tarfile.open(os.path.join(sahne.nihai(), "A_arastirma.tar"), "r") as tf:
+            self.assertNotIn(sahne.mk5[1:], tf.getnames())
 
 
 if __name__ == "__main__":

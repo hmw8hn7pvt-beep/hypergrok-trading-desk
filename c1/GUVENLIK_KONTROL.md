@@ -12,7 +12,9 @@ Kontrol, kod incelemesi ve `python3 -m unittest discover -s c1/tests -t .` koşu
 | Dış R5 hash'i kodda sabit değil; 64 onaltılık tek sabit manifest özetidir | Geçti | test 33, test 34 |
 | YG: `..`, tekrar, NUL ve kök dışı yol dosya açılmadan reddedilir | Geçti | test 08, test 09 |
 | Dizin symlink'i O_NOFOLLOW ile izlenmez | Geçti | test 10 |
-| A-ek ve MK-5 yoluna open/stat/lstat/readlink/listdir yok | Geçti | test 17 |
+| A-ek ve MK-5 yoluna open/stat/lstat/readlink/listdir yok | Geçti | test 17, test 36 |
+| MK-5 çıktı üstünün altında, R1/R2/nihai dışında kabul edilir | Geçti | test 35 |
+| Gerçek yol düzeni geçici kökte uçtan uca, MK-5 ve R1'e syscall yok | Geçti | test 36 |
 | R1 adı açılmaz, stat edilmez, içeriği değişmez | Geçti | test 28 |
 | Kaynak `mtime_ns` başarılı arşivde değişmez | Geçti | test 01 |
 | Symlink metni dolaylıdır; `os.readlink` çağrılmaz | Geçti | test 02 |

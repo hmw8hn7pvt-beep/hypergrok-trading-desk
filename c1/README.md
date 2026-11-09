@@ -12,7 +12,7 @@ Varsayılan **DRY-RUN** dir. Yapılandırma okunabilir; kaynak ağacı, envanter
 
 **İzole** mod yalnız geçici bir sınama kökünde, sentetik dosyalarla çalışır. `/workspace` ve `/home/box` bu modda reddedilir.
 
-**Gerçek** mod iki kapı ister: `--gercek` ve `--onay "ONAY C-1"`. Biri eksikse hiçbir kaynak açılmaz. Kart yolları, 2.908 / 2.897 sayıları, manifestin 547 baytı ve sabit SHA-256 değeri bu modda zorunludur. Python `3.13.5` değilse gerçek mod, dizin açmadan koşul 1 ile durur. MK-1..MK-4 hash'leri kodda yoktur; yapılandırma dosyasından okunur.
+**Gerçek** mod iki kapı ister: `--gercek` ve `--onay "ONAY C-1"`. Biri eksikse hiçbir kaynak açılmaz. Kart yolları, 2.908 / 2.897 sayıları, manifestin 547 baytı ve sabit SHA-256 değeri bu modda zorunludur. Python `3.13.5` değilse gerçek mod, dizin açmadan koşul 1 ile durur. MK-1..MK-4 hash'leri kodda yoktur; yapılandırma dosyasından okunur. MK-5 kaynağın içinde olamaz. Çıktı üstünün altında, R1, R2 ve nihai klasörün dışında durabilir; bu yol yine açılmaz. Gerçek ek `/home/box/agent-data/...` altındadır.
 
 Yapılandırma dosyası yasak köklerin içinde olamaz. Örnek iskelet: `ornek_yapilandirma.json`. Örnekteki hash alanları yer tutucudur.
 

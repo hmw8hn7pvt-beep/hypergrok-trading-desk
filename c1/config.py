@@ -159,8 +159,16 @@ class Yapilandirma:
         _kok(mk5.yol, "MK-5")
         if mk5.yol.startswith(self.kaynak_kok + "/") or mk5.yol == self.kaynak_kok:
             raise C1Error(6, "yapılandırma", "MK-5 kaynak kökünün içinde olamaz", "kaynak dışı", mk5.yol)
-        if mk5.yol.startswith(self.cikti_ust + "/") or mk5.yol == self.cikti_ust:
-            raise C1Error(6, "yapılandırma", "MK-5 çıktı kökünün içinde olamaz", "çıktı dışı", mk5.yol)
+        for ad in (self.r1_adi, self.r2_adi, self.nihai_adi):
+            sinir = self.cikti_ust + "/" + ad
+            if mk5.yol == sinir or mk5.yol.startswith(sinir + "/"):
+                raise C1Error(
+                    6,
+                    "yapılandırma",
+                    "MK-5 R1, R2 veya nihai klasörün içinde olamaz",
+                    "bu klasörlerin dışı",
+                    mk5.yol,
+                )
         if mk5.sha256 is not None:
             raise C1Error(6, "yapılandırma", "MK-5 hash'i kodda veya yapılandırmada doğrulanmaz", "yok", "var")
         self.dokunulmaz.add(mk5.yol)
@@ -239,8 +247,19 @@ def _mk_kur(ham: dict[str, object], r5_dizin: str) -> dict[str, Mk]:
     return sonuc
 
 
+def _bayrak(ham: dict[str, object], anahtar: str, varsayilan: bool) -> bool:
+    """Anahtar yoksa varsayılan. Gerçek modda kapsam ve manifest anahtarı boşsa açıktır."""
+    if anahtar not in ham:
+        return varsayilan
+    return bool(ham[anahtar])
+
+
 def yukle(yol: str, *, gercek: bool, onay: str, izole: bool) -> Yapilandirma:
-    """JSON yapılandırmasını okur. Onay kapısı dosya açılmadan çalışır."""
+    """JSON yapılandırmasını okur. Onay kapısı dosya açılmadan çalışır.
+
+    Gerçek dosya `/var/tmp/c1_r11_yapilandirma/c1_gercek.json` olabilir.
+    Bu yol yasak köklerin dışındadır ve açılabilir.
+    """
     if gercek and izole:
         raise C1Error(1, "onay", "Gerçek ve izole birlikte seçilemez", "tek mod", "ikisi")
     if gercek and onay != ONAY_METIN:
@@ -291,7 +310,7 @@ def yukle(yol: str, *, gercek: bool, onay: str, izole: bool) -> Yapilandirma:
         r5_dizin=r5,
         manifest_adi=str(ham.get("manifest_adi", "")),
         mk=mk,
-        kapsam_sabitleri=bool(ham.get("kapsam_sabitleri", False)),
-        manifest_sabitleri_zorunlu=bool(ham.get("manifest_sabitleri_zorunlu", False)),
+        kapsam_sabitleri=_bayrak(ham, "kapsam_sabitleri", gercek),
+        manifest_sabitleri_zorunlu=_bayrak(ham, "manifest_sabitleri_zorunlu", gercek),
         disk_yedek_bayt=int(ham.get("disk_yedek_bayt", DISK_YEDEK_BAYT)),
     )

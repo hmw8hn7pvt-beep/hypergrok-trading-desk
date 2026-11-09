@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -18,7 +19,15 @@ from c1.config import (
     Mk,
     Mod,
     Yapilandirma,
+    yukle,
 )
+
+# Gerçek ek: /home/box/agent-data/.../<64 onaltılık>.md
+MK5_GOVDE_EK = (
+    "agent-data/agents/06562474-4f5f-4279-a8d7-9a927d4cdc67/attachments/"
+    "57c848d4fc3add9dd2fa1c76165c5780cbff8dd9cae338f3e65beec967a4930a.md"
+)
+YAPILANDIRMA_EK = "var/tmp/c1_r11_yapilandirma/c1_gercek.json"
 
 
 def _yaz(yol: str, veri: bytes, izin: int) -> None:
@@ -214,6 +223,90 @@ def hazirla(
         mk5=mk5,
         a_ek=a_ek_yol,
         disari=disari,
+    )
+
+
+def kur_gercek_duzen(kok: str) -> Sahne:
+    """Gerçek yol düzenini geçici kök altında kurar ve yapılandırmayı yükler.
+
+    kaynak = .../workspace
+    envanter = .../workspace/hypergrok_v2_plan_20261109/C1_DOSYA_LISTESI.csv
+    r5 = .../workspace/trading-desk-research-v1.7.1/research/intraday-r5-20261109/freeze
+    çıktı = .../box
+    MK-5 = .../box/agent-data/agents/.../attachments/<özet>.md
+    yapılandırma = .../var/tmp/c1_r11_yapilandirma/c1_gercek.json
+    """
+    kaynak = os.path.join(kok, "workspace")
+    cikti = os.path.join(kok, "box")
+    freeze = os.path.join(
+        kaynak, "trading-desk-research-v1.7.1", "research", "intraday-r5-20261109", "freeze"
+    )
+    os.makedirs(freeze, 0o700)
+    os.mkdir(cikti, 0o700)
+    mk5 = os.path.join(cikti, MK5_GOVDE_EK)
+    os.makedirs(os.path.dirname(mk5), 0o700)
+    _yaz(mk5, b"MK5-DOKUNMA\n", 0o644)
+    r1 = os.path.join(cikti, R1_ADI)
+    os.mkdir(r1, 0o700)
+    _yaz(os.path.join(r1, "iz.txt"), b"KORU", 0o644)
+    govdeler = {
+        "MK-1": b"kural-mk1\n",
+        "MK-2": b"indirme-mk2\n",
+        "MK-3": b"kosu-mk3\n",
+        "MK-4": b"kayit-mk4\n",
+    }
+    ozetler = {anahtar: hashlib.sha256(veri).hexdigest() for anahtar, veri in govdeler.items()}
+    yollar = {}
+    for anahtar, veri in govdeler.items():
+        yol = os.path.join(freeze, MK_ADLARI[anahtar])
+        _yaz(yol, veri, 0o444)
+        yollar[anahtar] = yol
+    satirlar = [f"{ozetler[k]}  {yollar[k]}\n" for k in ("MK-1", "MK-2", "MK-3", "MK-4")]
+    satirlar.append(f"{'ab' * 32}  {mk5}\n")
+    manifest = os.path.join(freeze, MANIFEST_ADI)
+    _yaz(manifest, "".join(satirlar).encode("utf-8"), 0o444)
+    payload = os.path.join(kaynak, "veri", "not.txt")
+    os.makedirs(os.path.dirname(payload), 0o700)
+    _yaz(payload, b"merhaba", 0o644)
+    envanter = os.path.join(kaynak, "hypergrok_v2_plan_20261109", "C1_DOSYA_LISTESI.csv")
+    os.makedirs(os.path.dirname(envanter), 0o700)
+    with open(envanter, "w", encoding="utf-8", newline="") as fh:
+        yazici = csv.writer(fh, lineterminator="\n")
+        yazici.writerow(["yol", "grup", "tur", "izin", "boyut", "symlink_metin", "sha256"])
+        for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4"):
+            yazici.writerow([yollar[anahtar], "A", "normal", "0444", str(len(govdeler[anahtar])), "", ""])
+        yazici.writerow([manifest, "A", "normal", "0444", str(os.path.getsize(manifest)), "", ""])
+        yazici.writerow([payload, "A", "normal", "0644", "7", "", ""])
+    json_yol = os.path.join(kok, YAPILANDIRMA_EK)
+    os.makedirs(os.path.dirname(json_yol), 0o700)
+    govde = {
+        "kaynak_kok": kaynak,
+        "envanter_yolu": envanter,
+        "cikti_ust": cikti,
+        "r1_adi": R1_ADI,
+        "r2_adi": R2_ADI,
+        "nihai_adi": NIHAI_ADI,
+        "r5_dizin": freeze,
+        "manifest_adi": MANIFEST_ADI,
+        "mk": {
+            "MK-1": {"sha256": ozetler["MK-1"]},
+            "MK-2": {"sha256": ozetler["MK-2"]},
+            "MK-3": {"sha256": ozetler["MK-3"]},
+            "MK-4": {"sha256": ozetler["MK-4"]},
+            "MK-5": {"yol": mk5},
+        },
+    }
+    _yaz(json_yol, json.dumps(govde).encode("utf-8"), 0o644)
+    cfg = yukle(json_yol, gercek=False, onay="", izole=True)
+    return Sahne(
+        kok=kok,
+        kaynak=kaynak,
+        cikti=cikti,
+        cfg=cfg,
+        payload=payload,
+        payload_icerik=b"merhaba",
+        mk5=mk5,
+        ekstra={"json": json_yol, "agent_data": os.path.join(cikti, "agent-data"), "r1": r1},
     )
 
 

@@ -2,7 +2,7 @@
 
 Komut: `python3 -m unittest discover -s c1/tests -t . -v`
 
-Ortam: Python 3.12.3. Kartın gerçek mod sürümü 3.13.5'tir; izole sınamalar bu yüzden sürüm eşitliği aramaz. Koşu tarihi bu çalışma ortamındadır. 34 sınamanın 34'ü geçti. Başarısız sınama yoktur. Gerçek `/workspace` teslimi yine de yapılmış değildir; bakınız [GUVENLIK_KONTROL.md](GUVENLIK_KONTROL.md).
+Ortam: Python 3.12.3. Kartın gerçek mod sürümü 3.13.5'tir; izole sınamalar bu yüzden sürüm eşitliği aramaz. Koşu tarihi bu çalışma ortamındadır. 36 sınamanın 36'sı geçti. Başarısız sınama yoktur. Gerçek `/workspace` teslimi yine de yapılmış değildir; bakınız [GUVENLIK_KONTROL.md](GUVENLIK_KONTROL.md).
 
 | No | Sınama | Sonuç |
 | --- | --- | --- |
@@ -40,3 +40,5 @@ Ortam: Python 3.12.3. Kartın gerçek mod sürümü 3.13.5'tir; izole sınamalar
 | 32 | K4 belirsiz teslim | GEÇTİ |
 | 33 | Manifest sabit boyutu | GEÇTİ |
 | 34 | Statik yasaklar | GEÇTİ |
+| 35 | MK-5 çıktı üstünde, R1/R2/nihai dışında | GEÇTİ |
+| 36 | Gerçek yol düzeninin uçtan uca kopyası | GEÇTİ |
