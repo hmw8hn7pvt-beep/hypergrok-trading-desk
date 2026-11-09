@@ -4,7 +4,7 @@ Araştırma dosyalarını kaynaklara yazmadan üç TAR arşivine alır ve arşiv
 
 Bu çalışma [HyperGrok Trading Desk](https://github.com/galleonlabs/hypergrok-trading-desk) deposunun içindedir ve [MIT lisansı](../LICENSE) altındadır.
 
-Kurallar: [C1_KART_r11.md](C1_KART_r11.md). Güvenlik listesi: [GUVENLIK_KONTROL.md](GUVENLIK_KONTROL.md). Sınırlar: [BILINEN_SINIRLAMALAR.md](BILINEN_SINIRLAMALAR.md). Son koşu: [TEST_SONUCLARI.md](TEST_SONUCLARI.md).
+Kurallar: [C1_KART_r11.md](C1_KART_r11.md). Girdiler: [GIRDI_BICIMLERI.md](GIRDI_BICIMLERI.md). Güvenlik listesi: [GUVENLIK_KONTROL.md](GUVENLIK_KONTROL.md). Sınırlar: [BILINEN_SINIRLAMALAR.md](BILINEN_SINIRLAMALAR.md). Son koşu: [TEST_SONUCLARI.md](TEST_SONUCLARI.md).
 
 ## Modlar
 

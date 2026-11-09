@@ -41,7 +41,7 @@ def oku_arasi(_yol: str) -> None:
     return None
 
 
-def asama_arasi(_ad: str) -> None:
+def asama_arasi(_ad: str, _kayitlar: object = None) -> None:
     """Aşamalar arası gözlem. Üretimde boştur."""
     return None
 
@@ -201,10 +201,10 @@ def _tek_ad(ad: str) -> None:
         raise C1Error(12, "çıktı", "Çıktı adı geçersiz", "tek bileşen", ad)
 
 
-def var_mi(pfd: int, ad: str, r1_adi: str) -> bool:
+def var_mi(pfd: int, ad: str, dokunulmaz_adlar: tuple[str, ...]) -> bool:
     _tek_ad(ad)
-    if ad == r1_adi:
-        raise C1Error(1, "R1", "R1 adı sorgulanmaz ve açılmaz", "sorgulanmaz", ad)
+    if ad in dokunulmaz_adlar:
+        raise C1Error(1, "dokunulmaz", "Önceki geçersiz klasör sorgulanmaz ve açılmaz", "sorgulanmaz", ad)
     try:
         os.stat(ad, dir_fd=pfd, follow_symlinks=False)
     except FileNotFoundError:
@@ -345,7 +345,8 @@ def platform_denemesi(pfd: int, cfg: Yapilandirma) -> str:
     """En fazla bir deneme dizini ve üç deneme dosyası. Yalnız bunlar silinir."""
     d1 = f"C1_PLATFORM_DENEME_D_{os.getpid()}"
     d2 = f"C1_PLATFORM_DENEME_D2_{os.getpid()}"
-    if d1 in (cfg.r1_adi, cfg.r2_adi, cfg.nihai_adi) or d2 in (cfg.r1_adi, cfg.r2_adi, cfg.nihai_adi):
+    yasak = set(cfg.dokunulmaz_klasorler) | {cfg.gecici_adi, cfg.nihai_adi}
+    if d1 in yasak or d2 in yasak:
         raise C1Error(1, "0a", "Platform deneme adı kart adıyla çakışıyor", "ayrı ad", d1)
     eski = os.umask(0o077)
     try:
@@ -361,7 +362,7 @@ def platform_denemesi(pfd: int, cfg: Yapilandirma) -> str:
         _sil_ad(pfd, d2, dizin=True)
         for i in range(3):
             ad = f"C1_PLATFORM_DENEME_F{i}_{os.getpid()}"
-            if ad in (cfg.r1_adi, cfg.r2_adi, cfg.nihai_adi):
+            if ad in yasak:
                 raise C1Error(1, "0a", "Platform deneme dosyası kart adıyla çakışıyor", "ayrı ad", ad)
             try:
                 fd = os.open(ad, O_YAZ, 0o600, dir_fd=pfd)
@@ -387,18 +388,18 @@ def _sil_ad(pfd: int, ad: str, *, dizin: bool) -> None:
 
 
 def r2_olustur(pfd: int, cfg: Yapilandirma) -> tuple[int, tuple[int, int]]:
-    if cfg.r2_adi == cfg.r1_adi:
-        raise C1Error(1, "R1", "R2, R1 adını kullanamaz", "ayrı", cfg.r2_adi)
+    if cfg.gecici_adi in cfg.dokunulmaz_klasorler:
+        raise C1Error(1, "dokunulmaz", "Geçici ad dokunulmaz listede", "yeni ad", cfg.gecici_adi)
     eski = os.umask(0o077)
     try:
         try:
-            os.mkdir(cfg.r2_adi, 0o700, dir_fd=pfd)
+            os.mkdir(cfg.gecici_adi, 0o700, dir_fd=pfd)
         except OSError as exc:
-            raise os_hata(1, "0a", "R2 oluşturulamadı", "yeni dizin", exc) from exc
+            raise os_hata(1, "0a", "Geçici klasör oluşturulamadı", "yeni dizin", exc) from exc
     finally:
         os.umask(eski)
     try:
-        rfd = os.open(cfg.r2_adi, O_UST, dir_fd=pfd)
+        rfd = os.open(cfg.gecici_adi, O_UST, dir_fd=pfd)
     except OSError as exc:
         raise os_hata(1, "0a", "R2 açılamadı", "dizin tanıtıcısı", exc) from exc
     st = os.fstat(rfd)
@@ -406,7 +407,7 @@ def r2_olustur(pfd: int, cfg: Yapilandirma) -> tuple[int, tuple[int, int]]:
     mod = stat.S_IMODE(st.st_mode)
     if not stat.S_ISDIR(st.st_mode):
         kapat(rfd)
-        raise C1Error(1, "0a", "R2 dizin değil", "dizin", cfg.r2_adi)
+        raise C1Error(1, "0a", "Geçici klasör dizin değil", "dizin", cfg.gecici_adi)
     if mod != 0o700:
         kapat(rfd)
         raise C1Error(1, "0a", "R2 izni 0700 değil", "0700", oct(mod))

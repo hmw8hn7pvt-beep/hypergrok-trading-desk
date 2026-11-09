@@ -13,7 +13,9 @@ Kontrol, kod incelemesi ve `python3 -m unittest discover -s c1/tests -t .` koşu
 | YG: `..`, tekrar, NUL ve kök dışı yol dosya açılmadan reddedilir | Geçti | test 08, test 09 |
 | Dizin symlink'i O_NOFOLLOW ile izlenmez | Geçti | test 10 |
 | A-ek ve MK-5 yoluna open/stat/lstat/readlink/listdir yok | Geçti | test 17, test 36 |
-| MK-5 çıktı üstünün altında, R1/R2/nihai dışında kabul edilir | Geçti | test 35 |
+| Envanter başlığı `grup,yol,tur,boyut_bayt,mtime_trt,izin,bayrak,not` | Geçti | test 36 |
+| Eski R2 dokunulmaz; sıradaki geçici ad R3 | Geçti | test 36 |
+| Manifest göreli yolları küme olarak, sıra şartı olmadan | Geçti | test 36, test 37 |
 | Gerçek yol düzeni geçici kökte uçtan uca, MK-5 ve R1'e syscall yok | Geçti | test 36 |
 | R1 adı açılmaz, stat edilmez, içeriği değişmez | Geçti | test 28 |
 | Kaynak `mtime_ns` başarılı arşivde değişmez | Geçti | test 01 |

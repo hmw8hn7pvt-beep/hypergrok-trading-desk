@@ -32,7 +32,9 @@ K444_N = 216
 
 R1_ADI = "GECERSIZ_c1_arsiv_20261110"
 R2_ADI = "GECERSIZ_c1_arsiv_20261110_R2"
+R3_ADI = "GECERSIZ_c1_arsiv_20261110_R3"
 NIHAI_ADI = "c1_arsiv_20261110"
+DOKUNULMAZ_KLASORLER_GERCEK = (R1_ADI, R2_ADI)
 
 GERCEK_KAYNAK_KOK = "/workspace"
 GERCEK_ENVANTER = "/workspace/hypergrok_v2_plan_20261109/C1_DOSYA_LISTESI.csv"
@@ -60,7 +62,14 @@ KARANTINA_SONLARI = (
 )
 
 _SHA = re.compile(r"[0-9a-f]{64}")
-_CSV_BASLIK = ("yol", "grup", "tur", "izin", "boyut", "symlink_metin", "sha256")
+_CSV_BASLIK = ("grup", "yol", "tur", "boyut_bayt", "mtime_trt", "izin", "bayrak", "not")
+GRUP_ESLEME = {
+    "A_arastirma": "A",
+    "B1_canli_muhur_riskli": "B1",
+    "B2_anlik_goruntu_muhur_riskli": "B2",
+}
+A_EK_GRUP = "A_ek_oneri"
+SYMLINK_ONEK = "symlink->"
 
 
 class Mod(Enum):
@@ -113,8 +122,8 @@ class Yapilandirma:
     kaynak_kok: str
     envanter_yolu: str
     cikti_ust: str
-    r1_adi: str
-    r2_adi: str
+    gecici_adi: str
+    dokunulmaz_klasorler: tuple[str, ...]
     nihai_adi: str
     r5_dizin: str
     manifest_adi: str
@@ -129,15 +138,16 @@ class Yapilandirma:
         _kok(self.cikti_ust, "cikti_ust")
         _kok(self.envanter_yolu, "envanter_yolu")
         _kok(self.r5_dizin, "r5_dizin")
-        for etiket, ad in (
-            ("r1_adi", self.r1_adi),
-            ("r2_adi", self.r2_adi),
-            ("nihai_adi", self.nihai_adi),
-            ("manifest_adi", self.manifest_adi),
-        ):
-            _tek_bilesen(ad, etiket)
-        if len({self.r1_adi, self.r2_adi, self.nihai_adi}) != 3:
-            raise C1Error(1, "yapılandırma", "R1, R2 ve nihai adlar ayrı olmalı", "3 ad", "çakışma")
+        _tek_bilesen(self.gecici_adi, "gecici_adi")
+        _tek_bilesen(self.nihai_adi, "nihai_adi")
+        _tek_bilesen(self.manifest_adi, "manifest_adi")
+        if not self.dokunulmaz_klasorler:
+            raise C1Error(1, "yapılandırma", "Dokunulmaz klasör listesi boş", "R1 ve eski R2", "boş")
+        for ad in self.dokunulmaz_klasorler:
+            _tek_bilesen(ad, "dokunulmaz_klasor")
+        adlar = (self.gecici_adi, self.nihai_adi, *self.dokunulmaz_klasorler)
+        if len(set(adlar)) != len(adlar):
+            raise C1Error(1, "yapılandırma", "Geçici, nihai ve dokunulmaz adlar çakışıyor", "ayrı adlar", adlar)
         if self.kaynak_kok == self.cikti_ust or self.kaynak_kok.startswith(self.cikti_ust + "/") or self.cikti_ust.startswith(self.kaynak_kok + "/"):
             raise C1Error(1, "yapılandırma", "Kaynak ve çıktı kökleri ayrık olmalı", "ayrık", self.cikti_ust)
         if not (self.envanter_yolu == self.kaynak_kok or self.envanter_yolu.startswith(self.kaynak_kok + "/")):
@@ -159,13 +169,13 @@ class Yapilandirma:
         _kok(mk5.yol, "MK-5")
         if mk5.yol.startswith(self.kaynak_kok + "/") or mk5.yol == self.kaynak_kok:
             raise C1Error(6, "yapılandırma", "MK-5 kaynak kökünün içinde olamaz", "kaynak dışı", mk5.yol)
-        for ad in (self.r1_adi, self.r2_adi, self.nihai_adi):
+        for ad in (self.gecici_adi, self.nihai_adi, *self.dokunulmaz_klasorler):
             sinir = self.cikti_ust + "/" + ad
             if mk5.yol == sinir or mk5.yol.startswith(sinir + "/"):
                 raise C1Error(
                     6,
                     "yapılandırma",
-                    "MK-5 R1, R2 veya nihai klasörün içinde olamaz",
+                    "MK-5 dokunulmaz, geçici veya nihai klasörün içinde olamaz",
                     "bu klasörlerin dışı",
                     mk5.yol,
                 )
@@ -186,12 +196,18 @@ class Yapilandirma:
             "kaynak_kok": (self.kaynak_kok, GERCEK_KAYNAK_KOK),
             "envanter": (self.envanter_yolu, GERCEK_ENVANTER),
             "cikti_ust": (self.cikti_ust, GERCEK_CIKTI_UST),
-            "r1": (self.r1_adi, R1_ADI),
-            "r2": (self.r2_adi, R2_ADI),
             "nihai": (self.nihai_adi, NIHAI_ADI),
             "r5": (self.r5_dizin, GERCEK_R5_DIZIN),
             "manifest": (self.manifest_adi, MANIFEST_ADI),
         }
+        if set(self.dokunulmaz_klasorler) != set(DOKUNULMAZ_KLASORLER_GERCEK):
+            raise C1Error(
+                1,
+                "yapılandırma",
+                "Dokunulmaz klasörler R1 ve eski R2 olmalı",
+                list(DOKUNULMAZ_KLASORLER_GERCEK),
+                list(self.dokunulmaz_klasorler),
+            )
         for ad, (gelen, kart) in beklenen.items():
             if gelen != kart:
                 raise C1Error(1, "yapılandırma", f"Gerçek {ad} kartla uyuşmuyor", kart, gelen)
@@ -245,6 +261,15 @@ def _mk_kur(ham: dict[str, object], r5_dizin: str) -> dict[str, Mk]:
         raise C1Error(6, "yapılandırma", "MK-5 yolu metin değil", "metin", type(yol5).__name__)
     sonuc["MK-5"] = Mk("MK-5", yol5, None)
     return sonuc
+
+
+def _klasor_listesi(ham: dict[str, object]) -> tuple[str, ...]:
+    if "dokunulmaz_klasorler" not in ham:
+        raise C1Error(1, "yapılandırma", "dokunulmaz_klasorler yok", "R1 ve eski R2", "yok")
+    ham_liste = ham["dokunulmaz_klasorler"]
+    if not isinstance(ham_liste, list) or not ham_liste or not all(isinstance(x, str) for x in ham_liste):
+        raise C1Error(1, "yapılandırma", "dokunulmaz_klasorler metin listesi değil", "liste", ham_liste)
+    return tuple(ham_liste)
 
 
 def _bayrak(ham: dict[str, object], anahtar: str, varsayilan: bool) -> bool:
@@ -304,8 +329,8 @@ def yukle(yol: str, *, gercek: bool, onay: str, izole: bool) -> Yapilandirma:
         kaynak_kok=str(ham.get("kaynak_kok", "")),
         envanter_yolu=str(ham.get("envanter_yolu", "")),
         cikti_ust=str(ham.get("cikti_ust", "")),
-        r1_adi=str(ham.get("r1_adi", "")),
-        r2_adi=str(ham.get("r2_adi", "")),
+        gecici_adi=str(ham.get("gecici_adi", "")),
+        dokunulmaz_klasorler=_klasor_listesi(ham),
         nihai_adi=str(ham.get("nihai_adi", "")),
         r5_dizin=r5,
         manifest_adi=str(ham.get("manifest_adi", "")),

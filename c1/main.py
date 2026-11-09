@@ -137,9 +137,12 @@ def _disk_yeter(pfd: int, v_grup: dict[str, int], r_deger: int, yedek: int, asam
 def _islem_csv(islemler: list[Islem]) -> str:
     buf = io.StringIO()
     yazici = csv.writer(buf, lineterminator="\n")
-    yazici.writerow(["yol", "arcname", "grup", "tur", "izin"])
+    yazici.writerow(["yol", "arcname", "grup", "grup_ham", "tur", "izin", "boyut_bayt", "mtime_trt", "bayrak", "not"])
     for kayit in islemler:
-        yazici.writerow([kayit.yol, kayit.arcname, kayit.grup, kayit.tur, f"{kayit.izin:04o}"])
+        yazici.writerow([
+            kayit.yol, kayit.arcname, kayit.grup, kayit.grup_ham, kayit.tur,
+            f"0o{kayit.izin:o}", kayit.boyut_envanter, kayit.mtime_trt, kayit.bayrak, kayit.not_alani,
+        ])
     return buf.getvalue()
 
 
@@ -169,8 +172,8 @@ def _akis(ctx: Baglam, politika: Politika, deneme: str) -> reporting.Sonuc:
                 f"Kart Python: {PYTHON_GERCEK}",
                 f"mod: {cfg.mod.value}",
                 deneme,
-                "R1 açılmadı ve yeniden kullanılmadı",
-                f"R2: {cfg.r2_adi}",
+                "Dokunulmaz önceki klasörler açılmadı: " + ",".join(cfg.dokunulmaz_klasorler),
+                f"Geçici: {cfg.gecici_adi}",
                 "O_NOFOLLOW O_NOATIME O_PATH O_DIRECTORY O_CLOEXEC: var",
                 "çıktı yolu mutlak açılmaz; RFD üzerinden yazılır",
             ]
@@ -236,11 +239,10 @@ def _akis(ctx: Baglam, politika: Politika, deneme: str) -> reporting.Sonuc:
     gunluk.satir("adım 1 metadata aynı")
     for kayit in islemler:
         kayit.sha1 = _hash_al(kayit, politika, dizinler, 16)
-        if kayit.sha_envanter and kayit.sha_envanter != kayit.sha1:
-            raise C1Error(14, "adım2", "Envanter hash'i içerikle uyuşmuyor", kayit.sha_envanter, kayit.sha1)
     for grup in GRUPLAR:
         ctx.yaz(f"{grup}_kaynak_1.sha256", reporting.manifest_metni(islemler, grup))
     gunluk.satir("adım 2 kaynak hash")
+    secure_fs.asama_arasi("adim4-oncesi", islemler)
     arsiv_ozet: list[str] = []
     for grup in GRUPLAR:
         secilen = [k for k in islemler if k.grup == grup]
@@ -291,7 +293,7 @@ def _akis(ctx: Baglam, politika: Politika, deneme: str) -> reporting.Sonuc:
     gunluk.kapat()
     k1 = commit.k1()
     k2 = commit.k2(ctx.rfd, ctx.sync, ctx.r0)
-    k3 = commit.k3(ctx.pfd, ctx.rfd, cfg.r2_adi, cfg.nihai_adi, ctx.p0, ctx.r0)
+    k3 = commit.k3(ctx.pfd, ctx.rfd, cfg.gecici_adi, cfg.nihai_adi, ctx.p0, ctx.r0)
     durum = commit.k4(ctx.pfd, ctx.p0)
     metin = reporting.teslim_metni(durum, k1, k2, k3, durum)
     k5_hata = None
@@ -308,7 +310,7 @@ def _akis(ctx: Baglam, politika: Politika, deneme: str) -> reporting.Sonuc:
         ozet=metin if k5_hata is None else metin + f"K5_HATA: {k5_hata}\n",
         k5_hata=k5_hata,
         nihai_yol=cfg.cikti_ust + "/" + cfg.nihai_adi,
-        r2_yol=cfg.cikti_ust + "/" + cfg.r2_adi,
+        r2_yol=cfg.cikti_ust + "/" + cfg.gecici_adi,
     )
 
 
@@ -327,10 +329,10 @@ def calistir(cfg: Yapilandirma) -> reporting.Sonuc:
     rfd = -1
     ctx: Baglam | None = None
     try:
-        if secure_fs.var_mi(pfd, cfg.nihai_adi, cfg.r1_adi):
+        if secure_fs.var_mi(pfd, cfg.nihai_adi, cfg.dokunulmaz_klasorler):
             raise C1Error(1, "0a", "Nihai klasör zaten var", "yok", cfg.nihai_adi)
-        if secure_fs.var_mi(pfd, cfg.r2_adi, cfg.r1_adi):
-            raise C1Error(1, "0a", "R2 klasörü zaten var", "yok", cfg.r2_adi)
+        if secure_fs.var_mi(pfd, cfg.gecici_adi, cfg.dokunulmaz_klasorler):
+            raise C1Error(1, "0a", "Geçici klasör zaten var", "yok", cfg.gecici_adi)
         deneme = secure_fs.platform_denemesi(pfd, cfg)
         rfd, r0 = secure_fs.r2_olustur(pfd, cfg)
         ctx = Baglam(cfg, pfd, p0, rfd, r0)

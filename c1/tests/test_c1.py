@@ -31,6 +31,7 @@ from c1.config import (
     PYTHON_GERCEK,
     R1_ADI,
     R2_ADI,
+    R3_ADI,
     Mk,
     Mod,
     Yapilandirma,
@@ -116,7 +117,7 @@ class C1Testleri(unittest.TestCase):
         self.assertEqual(sonuc.durum, "TESLIM EDILDI", sonuc.ozet)
         self.assertIsNone(sonuc.k5_hata)
         self.assertTrue(os.path.isdir(sahne.nihai()))
-        self.assertFalse(os.path.exists(sahne.r2()))
+        self.assertFalse(os.path.exists(sahne.gecici()))
         rapor = _oku(os.path.join(sahne.nihai(), "RAPOR.txt"))
         bildirim = _oku(os.path.join(sahne.nihai(), "TESLIM_BILDIRIMI.txt"))
         self.assertIn("Kapanış: henüz yapılmadı", rapor)
@@ -156,8 +157,7 @@ class C1Testleri(unittest.TestCase):
             self.assertEqual(tf.getmembers(), [])
 
     def test_02_symlink(self) -> None:
-        metin = "hedef-dolayli"
-        sahne = self._sahne(dosyalar=[Dosya("bag", b"", "A", "symlink", 0o777, metin)])
+        sahne = self._sahne(dosyalar=[Dosya("bag", izin="0o777", symlink_hedef="@dizin")])
 
         def yasak(*_a, **_k):
             raise AssertionError("bağ metni okundu")
@@ -174,11 +174,14 @@ class C1Testleri(unittest.TestCase):
         with tarfile.open(os.path.join(sahne.nihai(), "A_arastirma.tar"), "r") as tf:
             uye = tf.getmember(sahne.payload[1:])
             self.assertTrue(uye.issym())
-            self.assertEqual(uye.linkname, metin)
+            self.assertTrue(os.path.isdir(uye.linkname))
+            self.assertNotIn(os.path.join(uye.linkname, "gizli.txt")[1:], tf.getnames())
             self.assertEqual(uye.size, 0)
         kaynak = _oku(os.path.join(sahne.nihai(), "A_kaynak_1.sha256"))
         self.assertIn("DOLAYLI", kaynak)
-        self.assertIn(hashlib.sha256(metin.encode()).hexdigest(), kaynak)
+        with tarfile.open(os.path.join(sahne.nihai(), "A_arastirma.tar"), "r") as tf:
+            hedef = tf.getmember(sahne.payload[1:]).linkname
+        self.assertIn(hashlib.sha256(hedef.encode()).hexdigest(), kaynak)
 
     def test_03_bos_dosya(self) -> None:
         sahne = self._sahne(dosyalar=[Dosya("bos.dat", b"")])
@@ -258,7 +261,15 @@ class C1Testleri(unittest.TestCase):
         self._dur(sahne, 7)
 
     def test_13_yanlis_hash(self) -> None:
-        sahne = self._sahne(dosyalar=[Dosya("veri/not.txt", b"merhaba", sha256="ab" * 32)])
+        sahne = self._sahne()
+
+        def kanca(ad: str, kayitlar=None) -> None:
+            if ad == "adim4-oncesi" and kayitlar:
+                for kayit in kayitlar:
+                    if kayit.yol == sahne.payload:
+                        kayit.sha1 = "ab" * 32
+
+        secure_fs.asama_arasi = kanca
         self._dur(sahne, 14)
 
     def test_14_bozuk_manifest(self) -> None:
@@ -272,6 +283,11 @@ class C1Testleri(unittest.TestCase):
     def test_16_fazla_manifest_satiri(self) -> None:
         sahne = self._sahne(manifest="fazla")
         self._dur(sahne, 6)
+
+    def test_37_manifest_sira_onemsiz(self) -> None:
+        sahne = self._sahne(manifest_ters=True)
+        sonuc = calistir(sahne.cfg)
+        self._basari(sahne, sonuc)
 
     def test_17_mk5_ve_a_ek_dokunulmaz(self) -> None:
         sahne = self._sahne(a_ek=True)
@@ -365,9 +381,9 @@ class C1Testleri(unittest.TestCase):
 
     def test_19_r2_var(self) -> None:
         sahne = self._sahne()
-        os.mkdir(sahne.r2(), 0o700)
+        os.mkdir(sahne.gecici(), 0o700)
         self._dur(sahne, 1)
-        self.assertTrue(os.path.isdir(sahne.r2()))
+        self.assertTrue(os.path.isdir(sahne.gecici()))
 
     def test_20_nihai_var(self) -> None:
         sahne = self._sahne()
@@ -375,7 +391,7 @@ class C1Testleri(unittest.TestCase):
         with self.assertRaises(C1Error) as cm:
             calistir(sahne.cfg)
         self.assertEqual(cm.exception.kosul, 1)
-        self.assertFalse(os.path.exists(sahne.r2()))
+        self.assertFalse(os.path.exists(sahne.gecici()))
         self.assertTrue(os.path.isdir(sahne.nihai()))
 
     def test_21_rename_basarisiz(self) -> None:
@@ -383,13 +399,13 @@ class C1Testleri(unittest.TestCase):
         orijinal = secure_fs.rename_noreplace
 
         def sarmal(eski_fd, eski, yeni_fd, yeni):
-            if eski == sahne.cfg.r2_adi:
+            if eski == sahne.cfg.gecici_adi:
                 raise OSError(17, "File exists")
             return orijinal(eski_fd, eski, yeni_fd, yeni)
 
         secure_fs.rename_noreplace = sarmal
         self._dur(sahne, 12)
-        self.assertTrue(os.path.isdir(sahne.r2()))
+        self.assertTrue(os.path.isdir(sahne.gecici()))
 
     def test_22_fsync_basarisiz(self) -> None:
         sahne = self._sahne()
@@ -399,7 +415,7 @@ class C1Testleri(unittest.TestCase):
 
         commit.fsync_cagri = patlat
         self._dur(sahne, 12)
-        self.assertTrue(os.path.isdir(sahne.r2()))
+        self.assertTrue(os.path.isdir(sahne.gecici()))
         self.assertFalse(os.path.exists(sahne.nihai()))
 
     def test_23_tar_kapanis(self) -> None:
@@ -540,8 +556,8 @@ class C1Testleri(unittest.TestCase):
             kaynak_kok=GERCEK_KAYNAK_KOK,
             envanter_yolu=GERCEK_ENVANTER,
             cikti_ust=GERCEK_CIKTI_UST,
-            r1_adi=R1_ADI,
-            r2_adi=R2_ADI,
+            gecici_adi=R3_ADI,
+            dokunulmaz_klasorler=(R1_ADI, R2_ADI),
             nihai_adi=NIHAI_ADI,
             r5_dizin=GERCEK_R5_DIZIN,
             manifest_adi=MANIFEST_ADI,
@@ -576,7 +592,7 @@ class C1Testleri(unittest.TestCase):
         sonuc = calistir(sahne.cfg)
         self.assertEqual(sonuc.durum, "COMMIT_DURABILITY_UNCERTAIN")
         self.assertTrue(os.path.isdir(sahne.nihai()))
-        self.assertFalse(os.path.exists(sahne.r2()))
+        self.assertFalse(os.path.exists(sahne.gecici()))
         bildirim = _oku(os.path.join(sahne.nihai(), "TESLIM_BILDIRIMI.txt"))
         self.assertIn("COMMIT_DURABILITY_UNCERTAIN", bildirim)
         self.assertNotIn("durum: TESLIM EDILDI", bildirim)
@@ -714,8 +730,8 @@ class GercekDuzenTestleri(unittest.TestCase):
             kaynak_kok=GERCEK_KAYNAK_KOK,
             envanter_yolu=GERCEK_ENVANTER,
             cikti_ust=GERCEK_CIKTI_UST,
-            r1_adi=R1_ADI,
-            r2_adi=R2_ADI,
+            gecici_adi=R3_ADI,
+            dokunulmaz_klasorler=(R1_ADI, R2_ADI),
             nihai_adi=NIHAI_ADI,
             r5_dizin=GERCEK_R5_DIZIN,
             manifest_adi=MANIFEST_ADI,
@@ -729,10 +745,10 @@ class GercekDuzenTestleri(unittest.TestCase):
         cfg = self._cfg(GERCEK_MK5)
         self.assertIn(GERCEK_MK5, cfg.dokunulmaz)
         self.assertTrue(GERCEK_MK5.startswith(GERCEK_CIKTI_UST + "/"))
-        for ad in (R1_ADI, R2_ADI, NIHAI_ADI):
+        for ad in (R1_ADI, R2_ADI, R3_ADI, NIHAI_ADI):
             with self.assertRaises(C1Error) as cm:
                 self._cfg(GERCEK_CIKTI_UST + "/" + ad + "/ek.md")
-            self.assertIn("R1, R2 veya nihai", cm.exception.aciklama)
+            self.assertIn("dokunulmaz, geçici veya nihai", cm.exception.aciklama)
         with self.assertRaises(C1Error) as cm:
             self._cfg(GERCEK_KAYNAK_KOK + "/bot-eki.md")
         self.assertIn("kaynak kökü", cm.exception.aciklama)
@@ -745,8 +761,8 @@ class GercekDuzenTestleri(unittest.TestCase):
             "kaynak_kok": GERCEK_KAYNAK_KOK,
             "envanter_yolu": GERCEK_ENVANTER,
             "cikti_ust": GERCEK_CIKTI_UST,
-            "r1_adi": R1_ADI,
-            "r2_adi": R2_ADI,
+            "gecici_adi": R3_ADI,
+            "dokunulmaz_klasorler": [R1_ADI, R2_ADI],
             "nihai_adi": NIHAI_ADI,
             "r5_dizin": GERCEK_R5_DIZIN,
             "manifest_adi": MANIFEST_ADI,
@@ -794,7 +810,10 @@ class GercekDuzenTestleri(unittest.TestCase):
         once_r1 = os.lstat(sahne.ekstra["r1"])
         mk5_icerik = _oku(sahne.mk5, True)
         bilesen = {"agent-data", "attachments", os.path.basename(sahne.mk5)}
-        with SyscallKalkan([sahne.ekstra["agent_data"], sahne.ekstra["r1"], sahne.mk5], bilesen):
+        with SyscallKalkan(
+            [sahne.ekstra["agent_data"], sahne.ekstra["r1"], sahne.ekstra["eski_r2"], sahne.mk5],
+            bilesen,
+        ):
             sonuc = calistir(sahne.cfg)
         self.assertEqual(sonuc.durum, "TESLIM EDILDI", sonuc.ozet)
         self.assertIsNone(sonuc.k5_hata)
@@ -806,6 +825,8 @@ class GercekDuzenTestleri(unittest.TestCase):
         self.assertEqual((once_agent.st_dev, once_agent.st_ino, once_agent.st_mtime_ns), (sonra_agent.st_dev, sonra_agent.st_ino, sonra_agent.st_mtime_ns))
         self.assertEqual((once_r1.st_dev, once_r1.st_ino), (sonra_r1.st_dev, sonra_r1.st_ino))
         self.assertEqual(_oku(os.path.join(sahne.ekstra["r1"], "iz.txt"), True), b"KORU")
+        self.assertEqual(_oku(os.path.join(sahne.ekstra["eski_r2"], "GUNLUK.txt"), True), b"ESKI-R2\n")
+        self.assertIn("symlink->", _oku(os.path.join(sahne.kaynak, "hypergrok_v2_plan_20261109", "C1_DOSYA_LISTESI.csv")))
         rapor = _oku(os.path.join(sahne.nihai(), "R5_FREEZE_HASH.txt"))
         self.assertIn("MK-5 yalnız metinsel yol", rapor)
         self.assertIn(sahne.mk5, rapor)

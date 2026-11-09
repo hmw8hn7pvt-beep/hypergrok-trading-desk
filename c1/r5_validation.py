@@ -7,6 +7,7 @@ MK-1..MK-4 hash'leri yalnız yapılandırmadan okunur.
 
 from __future__ import annotations
 
+import os
 import re
 
 from c1.config import MANIFEST_BOYUT, MANIFEST_SHA256, Yapilandirma
@@ -15,7 +16,7 @@ from c1.hashing import ozet_bayt
 from c1.inventory import Islem
 from c1.secure_fs import Politika, bayt_oku, icerik_ac
 
-_SATIR = re.compile(r"([0-9a-f]{64}) [ *](.+)")
+_SATIR = re.compile(r"([0-9a-f]{64})  (.+)")
 
 
 def _oku(yol: str, politika: Politika, dizinler: dict, islem: Islem | None) -> tuple[bytes, str]:
@@ -44,11 +45,25 @@ def coz_manifest(veri: bytes) -> list[tuple[str, str]]:
     for satir in satirlar:
         eslesme = _SATIR.fullmatch(satir)
         if not eslesme:
-            raise C1Error(6, "3-B", "Manifest satır biçimi", "sha256  yol", satir)
+            raise C1Error(6, "3-B", "Manifest satır biçimi sha256sum metin değil", "64hex␠␠yol", satir)
         sonuc.append((eslesme.group(1), eslesme.group(2)))
     if len({yol for _, yol in sonuc}) != 5:
         raise C1Error(6, "3-B", "Manifest yolları yineleniyor", "5 benzersiz", "yinelenen")
     return sonuc
+
+
+def manifest_yolunu_coz(ham: str, r5_dizin: str) -> str:
+    """Göreli yol freeze dizinine göre çözülür. Sıra değil, çözülmüş küme kullanılır."""
+    if not ham or "\x00" in ham:
+        raise C1Error(6, "3-B", "Manifest yolu boş veya NUL", "yol", ham)
+    if ham.startswith("/"):
+        if os.path.normpath(ham) != ham:
+            raise C1Error(6, "3-B", "Mutlak manifest yolu normal değil", ham, os.path.normpath(ham))
+        return ham
+    parca = ham.split("/")
+    if any(p in ("", ".", "..") for p in parca):
+        raise C1Error(6, "3-B", "Göreli manifest yolu geçersiz", "freeze altına göreli", ham)
+    return r5_dizin + "/" + ham
 
 
 def dogrula(
@@ -80,11 +95,12 @@ def dogrula(
             "(bağımsız doğrulama değildir); boyut ve SHA-256 uydu"
         )
     satirlar = coz_manifest(veri)
-    gelen = {yol for _, yol in satirlar}
+    cozulmus = [(sha, manifest_yolunu_coz(yol, cfg.r5_dizin)) for sha, yol in satirlar]
+    gelen = {yol for _, yol in cozulmus}
     beklenen = {cfg.mk[k].yol for k in ("MK-1", "MK-2", "MK-3", "MK-4", "MK-5")}
     if gelen != beklenen:
         raise C1Error(6, "3-B", "Manifest yol kümesi MK-1..MK-5 değil", sorted(beklenen), sorted(gelen))
-    harita = {yol: sha for sha, yol in satirlar}
+    harita = {yol: sha for sha, yol in cozulmus}
     rapor = [sabit_satir, "3-B (iv): manifest bayt özgünlüğü doğrulanamadı"]
     for anahtar, asama in (("MK-1", "3a-1"), ("MK-2", "3a-1"), ("MK-3", "3a-1"), ("MK-4", "3a-2")):
         mk = cfg.mk[anahtar]

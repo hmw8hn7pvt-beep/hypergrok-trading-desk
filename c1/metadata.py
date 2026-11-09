@@ -45,6 +45,8 @@ def dosya_kaydet(islem: Islem, politika: Politika, dizinler: dict[str, Meta]) ->
         sa_kontrol(islem.symlink_metin, meta.boyut)
     elif meta.tur != "normal":
         raise C1Error(4, "0e", "Normal dosya beklenirken tür farklı", "normal", meta.tur)
+    if islem.tur == "normal" and meta.boyut != islem.boyut_envanter:
+        raise C1Error(2, "0e", "Envanter boyut_bayt ölçülen boyut değil", str(islem.boyut_envanter), str(meta.boyut))
     if islem.tur == "normal" and islem.izin == 0o444 and meta.mod != 0o444:
         raise C1Error(6, "0e", "K444 izin sapması", "0444", oct(meta.mod))
     islem.meta = meta

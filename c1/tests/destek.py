@@ -14,6 +14,7 @@ from c1.config import (
     MK_ADLARI,
     R1_ADI,
     R2_ADI,
+    R3_ADI,
     NIHAI_ADI,
     DISK_YEDEK_BAYT,
     Mk,
@@ -59,12 +60,14 @@ def _temizle(yol: str) -> None:
 @dataclass
 class Dosya:
     ad: str
-    icerik: bytes
-    grup: str = "A"
-    tur: str = "normal"
-    izin: int = 0o644
-    symlink_metin: str = ""
-    sha256: str = ""
+    icerik: bytes = b""
+    grup: str = "A_arastirma"
+    tur: str = "file"
+    izin: str = "0o644"
+    symlink_hedef: str = ""
+    mtime_trt: str = "2026-11-09 08:42:28"
+    bayrak: str = ""
+    notu: str = ""
 
 
 @dataclass
@@ -83,8 +86,8 @@ class Sahne:
     def nihai(self) -> str:
         return os.path.join(self.cikti, self.cfg.nihai_adi)
 
-    def r2(self) -> str:
-        return os.path.join(self.cikti, self.cfg.r2_adi)
+    def gecici(self) -> str:
+        return os.path.join(self.cikti, self.cfg.gecici_adi)
 
     def kapat(self) -> None:
         _temizle(self.kok)
@@ -100,6 +103,7 @@ def hazirla(
     kacis: bool = False,
     yinelenen: bool = False,
     manifest_sabit: bool = False,
+    manifest_ters: bool = False,
 ) -> Sahne:
     kaynak = os.path.join(kok, "src")
     cikti = os.path.join(kok, "out")
@@ -120,23 +124,22 @@ def hazirla(
     for anahtar, veri in govdeler.items():
         _yaz(os.path.join(freeze, MK_ADLARI[anahtar]), veri, 0o444)
     yollar = {anahtar: os.path.join(freeze, MK_ADLARI[anahtar]) for anahtar in govdeler}
+    mk1 = ozetler["MK-1"]
+    if manifest == "bozuk":
+        mk1 = ("0" if mk1[0] != "0" else "1") + mk1[1:]
+    satirlar = [
+        f"{mk1}  {MK_ADLARI['MK-1']}\n",
+        f"{ozetler['MK-2']}  {MK_ADLARI['MK-2']}\n",
+        f"{ozetler['MK-3']}  {MK_ADLARI['MK-3']}\n",
+        f"{'ab' * 32}  {mk5}\n",
+        f"{ozetler['MK-4']}  {MK_ADLARI['MK-4']}\n",
+    ]
     if manifest == "eksik":
-        satirlar = [f"{ozetler['MK-1']}  {yollar['MK-1']}\n", f"{ozetler['MK-2']}  {yollar['MK-2']}\n", f"{ozetler['MK-3']}  {yollar['MK-3']}\n", f"{ozetler['MK-4']}  {yollar['MK-4']}\n"]
+        satirlar = satirlar[:4]
     elif manifest == "fazla":
-        satirlar = [f"{ozetler[k]}  {yollar[k]}\n" for k in ("MK-1", "MK-2", "MK-3", "MK-4")]
-        satirlar.append(f"{'ab' * 32}  {mk5}\n")
         satirlar.append(f"{'cd' * 32}  {mk5}-fazla\n")
-    else:
-        mk1 = ozetler["MK-1"]
-        if manifest == "bozuk":
-            mk1 = ("0" if mk1[0] != "0" else "1") + mk1[1:]
-        satirlar = [
-            f"{mk1}  {yollar['MK-1']}\n",
-            f"{ozetler['MK-2']}  {yollar['MK-2']}\n",
-            f"{ozetler['MK-3']}  {yollar['MK-3']}\n",
-            f"{ozetler['MK-4']}  {yollar['MK-4']}\n",
-            f"{'ab' * 32}  {mk5}\n",
-        ]
+    if manifest_ters:
+        satirlar = list(reversed(satirlar))
     _yaz(os.path.join(freeze, MANIFEST_ADI), "".join(satirlar).encode("utf-8"), 0o444)
     if dosyalar is None:
         dosyalar = [Dosya("veri/not.txt", b"merhaba")]
@@ -144,10 +147,18 @@ def hazirla(
     for dosya in dosyalar:
         yol = os.path.join(kaynak, dosya.ad)
         os.makedirs(os.path.dirname(yol), 0o700, exist_ok=True)
-        if dosya.tur == "symlink":
-            os.symlink(dosya.symlink_metin, yol)
+        if dosya.symlink_hedef:
+            hedef = dosya.symlink_hedef
+            if hedef == "@dizin":
+                hedef = os.path.join(kaynak, "symlink_hedef_dizin")
+                os.makedirs(hedef, 0o700, exist_ok=True)
+                gizli = os.path.join(hedef, "gizli.txt")
+                if not os.path.exists(gizli):
+                    _yaz(gizli, b"GIZLI-HEDEF\n", 0o644)
+            os.symlink(hedef, yol)
+            dosya.symlink_hedef = hedef
         else:
-            _yaz(yol, dosya.icerik, dosya.izin)
+            _yaz(yol, dosya.icerik, int(dosya.izin, 8))
         olusan.append((dosya, yol))
     a_ek_yol = None
     if a_ek:
@@ -168,28 +179,26 @@ def hazirla(
     envanter = os.path.join(kaynak, "C1_DOSYA_LISTESI.csv")
     with open(envanter, "w", encoding="utf-8", newline="") as fh:
         yazici = csv.writer(fh, lineterminator="\n")
-        yazici.writerow(["yol", "grup", "tur", "izin", "boyut", "symlink_metin", "sha256"])
+        yazici.writerow(["grup", "yol", "tur", "boyut_bayt", "mtime_trt", "izin", "bayrak", "not"])
         for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4"):
             veri = govdeler[anahtar]
-            yazici.writerow([yollar[anahtar], "A", "normal", "0444", str(len(veri)), "", ""])
+            yazici.writerow(["A_arastirma", yollar[anahtar], "file", str(len(veri)), "2026-11-09 09:07:45", "0o444", "", ""])
         manifest_yol = os.path.join(freeze, MANIFEST_ADI)
-        boyut = os.path.getsize(manifest_yol)
-        yazici.writerow([manifest_yol, "A", "normal", "0444", str(boyut), "", ""])
+        yazici.writerow(["A_arastirma", manifest_yol, "file", str(os.path.getsize(manifest_yol)), "2026-11-09 09:07:45", "0o444", "", ""])
         for dosya, yol in olusan:
-            if dosya.tur == "symlink":
-                boyut_hucre = str(len(dosya.symlink_metin.encode("utf-8", "surrogateescape")))
+            if dosya.symlink_hedef:
+                tur_hucre, boyut_hucre = "symlink->" + dosya.symlink_hedef, "0"
             else:
-                boyut_hucre = str(len(dosya.icerik))
-            sha = dosya.sha256
-            yazici.writerow([yol, dosya.grup, dosya.tur, f"{dosya.izin:04o}", boyut_hucre, dosya.symlink_metin, sha])
+                tur_hucre, boyut_hucre = "file", str(len(dosya.icerik))
+            yazici.writerow([dosya.grup, yol, tur_hucre, boyut_hucre, dosya.mtime_trt, dosya.izin, dosya.bayrak, dosya.notu])
             if yinelenen:
-                yazici.writerow([yol, dosya.grup, dosya.tur, f"{dosya.izin:04o}", boyut_hucre, dosya.symlink_metin, sha])
+                yazici.writerow([dosya.grup, yol, tur_hucre, boyut_hucre, dosya.mtime_trt, dosya.izin, dosya.bayrak, dosya.notu])
         if a_ek_yol:
-            yazici.writerow([a_ek_yol, "A_ek_oneri", "normal", "0644", "13", "", ""])
+            yazici.writerow(["A_ek_oneri", a_ek_yol, "file", "13", "2026-11-09 09:23:45", "0o644", "", "kapsam disi"])
         if traversal:
-            yazici.writerow([kaynak + "/../disari/gizli.txt", "A", "normal", "0644", "1", "", ""])
+            yazici.writerow(["A_arastirma", kaynak + "/../disari/gizli.txt", "file", "1", "2026-11-09 08:42:28", "0o644", "", ""])
         if kacis and disari:
-            yazici.writerow([os.path.join(kaynak, "kacis", "gizli.txt"), "A", "normal", "0644", "13", "", ""])
+            yazici.writerow(["A_arastirma", os.path.join(kaynak, "kacis", "gizli.txt"), "file", "13", "2026-11-09 08:42:28", "0o644", "", ""])
     mk = {
         anahtar: Mk(anahtar, yollar[anahtar], ozetler[anahtar])
         for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4")
@@ -201,8 +210,8 @@ def hazirla(
         kaynak_kok=kaynak,
         envanter_yolu=envanter,
         cikti_ust=cikti,
-        r1_adi=R1_ADI,
-        r2_adi=R2_ADI,
+        gecici_adi=R3_ADI,
+        dokunulmaz_klasorler=(R1_ADI, R2_ADI),
         nihai_adi=NIHAI_ADI,
         r5_dizin=freeze,
         manifest_adi=MANIFEST_ADI,
@@ -249,6 +258,9 @@ def kur_gercek_duzen(kok: str) -> Sahne:
     r1 = os.path.join(cikti, R1_ADI)
     os.mkdir(r1, 0o700)
     _yaz(os.path.join(r1, "iz.txt"), b"KORU", 0o644)
+    eski_r2 = os.path.join(cikti, R2_ADI)
+    os.mkdir(eski_r2, 0o700)
+    _yaz(os.path.join(eski_r2, "GUNLUK.txt"), b"ESKI-R2\n", 0o644)
     govdeler = {
         "MK-1": b"kural-mk1\n",
         "MK-2": b"indirme-mk2\n",
@@ -261,30 +273,41 @@ def kur_gercek_duzen(kok: str) -> Sahne:
         yol = os.path.join(freeze, MK_ADLARI[anahtar])
         _yaz(yol, veri, 0o444)
         yollar[anahtar] = yol
-    satirlar = [f"{ozetler[k]}  {yollar[k]}\n" for k in ("MK-1", "MK-2", "MK-3", "MK-4")]
-    satirlar.append(f"{'ab' * 32}  {mk5}\n")
+    satirlar = [
+        f"{ozetler['MK-1']}  {MK_ADLARI['MK-1']}\n",
+        f"{ozetler['MK-2']}  {MK_ADLARI['MK-2']}\n",
+        f"{ozetler['MK-3']}  {MK_ADLARI['MK-3']}\n",
+        f"{'ab' * 32}  {mk5}\n",
+        f"{ozetler['MK-4']}  {MK_ADLARI['MK-4']}\n",
+    ]
     manifest = os.path.join(freeze, MANIFEST_ADI)
     _yaz(manifest, "".join(satirlar).encode("utf-8"), 0o444)
     payload = os.path.join(kaynak, "veri", "not.txt")
     os.makedirs(os.path.dirname(payload), 0o700)
     _yaz(payload, b"merhaba", 0o644)
+    hedef = os.path.join(kaynak, "bybit_research_v2val_rls6_20261109_0952")
+    os.mkdir(hedef, 0o700)
+    _yaz(os.path.join(hedef, "gizli.txt"), b"GIZLI-HEDEF\n", 0o644)
+    bag = os.path.join(kaynak, "bybit_v2val_rls6_20261109")
+    os.symlink(hedef, bag)
     envanter = os.path.join(kaynak, "hypergrok_v2_plan_20261109", "C1_DOSYA_LISTESI.csv")
     os.makedirs(os.path.dirname(envanter), 0o700)
     with open(envanter, "w", encoding="utf-8", newline="") as fh:
         yazici = csv.writer(fh, lineterminator="\n")
-        yazici.writerow(["yol", "grup", "tur", "izin", "boyut", "symlink_metin", "sha256"])
+        yazici.writerow(["grup", "yol", "tur", "boyut_bayt", "mtime_trt", "izin", "bayrak", "not"])
         for anahtar in ("MK-1", "MK-2", "MK-3", "MK-4"):
-            yazici.writerow([yollar[anahtar], "A", "normal", "0444", str(len(govdeler[anahtar])), "", ""])
-        yazici.writerow([manifest, "A", "normal", "0444", str(os.path.getsize(manifest)), "", ""])
-        yazici.writerow([payload, "A", "normal", "0644", "7", "", ""])
+            yazici.writerow(["A_arastirma", yollar[anahtar], "file", str(len(govdeler[anahtar])), "2026-11-09 09:07:45", "0o444", "", ""])
+        yazici.writerow(["A_arastirma", manifest, "file", str(os.path.getsize(manifest)), "2026-11-09 09:07:45", "0o444", "", ""])
+        yazici.writerow(["A_arastirma", payload, "file", "7", "2026-11-09 08:42:28", "0o644", "", ""])
+        yazici.writerow(["A_arastirma", bag, "symlink->" + hedef, "0", "2026-11-09 09:59:10", "0o777", "ADDA_TARIH_2026-11-09_CALISMA_TARIHI_VERI_DEGIL", ""])
     json_yol = os.path.join(kok, YAPILANDIRMA_EK)
     os.makedirs(os.path.dirname(json_yol), 0o700)
     govde = {
         "kaynak_kok": kaynak,
         "envanter_yolu": envanter,
         "cikti_ust": cikti,
-        "r1_adi": R1_ADI,
-        "r2_adi": R2_ADI,
+        "gecici_adi": R3_ADI,
+        "dokunulmaz_klasorler": [R1_ADI, R2_ADI],
         "nihai_adi": NIHAI_ADI,
         "r5_dizin": freeze,
         "manifest_adi": MANIFEST_ADI,
@@ -306,7 +329,14 @@ def kur_gercek_duzen(kok: str) -> Sahne:
         payload=payload,
         payload_icerik=b"merhaba",
         mk5=mk5,
-        ekstra={"json": json_yol, "agent_data": os.path.join(cikti, "agent-data"), "r1": r1},
+        ekstra={
+            "json": json_yol,
+            "agent_data": os.path.join(cikti, "agent-data"),
+            "r1": r1,
+            "eski_r2": eski_r2,
+            "bag": bag,
+            "hedef": hedef,
+        },
     )
 
 

@@ -10,13 +10,13 @@ import re
 
 from c1.errors import C1Error
 
-_IZIN = re.compile(r"[0-7]{3,4}")
+_IZIN = re.compile(r"0o[0-7]{3,4}")
 
 
 def izin_coz(metin: str) -> int:
     metin = metin.strip()
     if not _IZIN.fullmatch(metin):
-        raise C1Error(2, "YG", "İzin sekizlik değil", "0[0-7]{3,4}", metin)
+        raise C1Error(2, "YG", "İzin 0o biçiminde değil", "0o644", metin)
     return int(metin, 8)
 
 

@@ -49,9 +49,10 @@ def kuru_ozet(cfg: Yapilandirma, surum: str) -> str:
         "Bu sürüm kart sürümü değilse gerçek mod, dizin açmadan koşul 1 ile durur.\n"
         f"Yapılandırılan kaynak kökü: {cfg.kaynak_kok}\n"
         f"Yapılandırılan çıktı üstü: {cfg.cikti_ust}\n"
-        f"R2 adı: {cfg.r2_adi}\n"
+        f"Geçici ad: {cfg.gecici_adi}\n"
         f"Nihai ad: {cfg.nihai_adi}\n"
-        "R1 açılmaz ve yeniden kullanılmaz.\n"
+        f"Dokunulmaz klasörler: {', '.join(cfg.dokunulmaz_klasorler)}\n"
+        "Dokunulmaz klasörler açılmaz.\n"
     )
 
 
@@ -85,6 +86,8 @@ def rapor_metni(
         f"K444 = {k444} ({r5_icinde} R5 dahil)\n"
         f"{symlink}\n"
         "fazla dosya kontrolü yapılmadı\n"
+        "mtime_trt bilgi amaçlıdır; karşılaştırma nanosaniye kayıtlarıyla yapılır\n"
+        "bayrak ve not analiz edilmez\n"
         "manifest bayt özgünlüğü doğrulanamadı\n"
         "B1 ve B2 KARANTİNA: içerik yorumlanmaz\n"
         "Kapanış: henüz yapılmadı\n"

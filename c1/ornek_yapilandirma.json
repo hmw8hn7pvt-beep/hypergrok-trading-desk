@@ -2,8 +2,11 @@
   "kaynak_kok": "/workspace",
   "envanter_yolu": "/workspace/hypergrok_v2_plan_20261109/C1_DOSYA_LISTESI.csv",
   "cikti_ust": "/home/box",
-  "r1_adi": "GECERSIZ_c1_arsiv_20261110",
-  "r2_adi": "GECERSIZ_c1_arsiv_20261110_R2",
+  "gecici_adi": "GECERSIZ_c1_arsiv_20261110_R3",
+  "dokunulmaz_klasorler": [
+    "GECERSIZ_c1_arsiv_20261110",
+    "GECERSIZ_c1_arsiv_20261110_R2"
+  ],
   "nihai_adi": "c1_arsiv_20261110",
   "r5_dizin": "/workspace/trading-desk-research-v1.7.1/research/intraday-r5-20261109/freeze",
   "manifest_adi": "SHA256SUMS.txt",

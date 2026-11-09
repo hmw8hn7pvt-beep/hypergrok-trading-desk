@@ -10,14 +10,17 @@ import io
 from dataclasses import dataclass, field
 
 from c1.config import (
+    A_EK_GRUP,
     A_EK_N,
     ENVANTER_N,
+    GRUP_ESLEME,
     GRUP_SAYILARI,
     GRUPLAR,
     ISLEM_N,
     K444_N,
     NORMAL_N,
     SYMLINK_N,
+    SYMLINK_ONEK,
     Yapilandirma,
     csv_baslik,
 )
@@ -31,11 +34,14 @@ class Islem:
     yol: str
     arcname: str
     grup: str
+    grup_ham: str
     tur: str
     izin: int
     boyut_envanter: int
     symlink_metin: str
-    sha_envanter: str
+    mtime_trt: str
+    bayrak: str
+    not_alani: str
     meta: Meta | None = None
     h_i: int = 0
     sha1: str = ""
@@ -56,31 +62,37 @@ def _ayir(metin: str, cfg: Yapilandirma) -> tuple[list[Islem], list[str]]:
     for i, row in enumerate(reader, start=2):
         try:
             yol = row["yol"] or ""
-            grup = row["grup"] or ""
-            tur = row["tur"] or ""
+            grup_ham = row["grup"] or ""
+            tur_ham = row["tur"] or ""
             izin = izin_coz(row["izin"] or "")
-            boyut = int(row["boyut"])
-            metin_link = row["symlink_metin"] or ""
-            sha = (row["sha256"] or "").strip().lower()
+            boyut = int(row["boyut_bayt"])
+            mtime_trt = row["mtime_trt"] or ""
+            bayrak = row["bayrak"] or ""
+            not_alani = row["not"] or ""
         except (TypeError, ValueError, C1Error) as exc:
             raise C1Error(2, "0b", f"Satır {i} çözülemedi", "geçerli satır", str(exc)) from exc
         if yol == mk5:
             raise C1Error(2, "0b", "MK-5 envantere alınamaz", "envanterde yok", yol)
-        if grup == "A_ek_oneri":
+        if grup_ham == A_EK_GRUP:
             a_ek.append(yol)
             continue
-        if grup not in GRUPLAR:
-            raise C1Error(2, "0b", "Bilinmeyen grup", ",".join(GRUPLAR), grup)
-        if tur not in ("normal", "symlink"):
-            raise C1Error(2, "0b", "Bilinmeyen tür", "normal|symlink", tur)
+        if grup_ham not in GRUP_ESLEME:
+            raise C1Error(2, "0b", "Bilinmeyen grup", ",".join((*GRUP_ESLEME, A_EK_GRUP)), grup_ham)
+        grup = GRUP_ESLEME[grup_ham]
+        if tur_ham == "file":
+            tur, metin_link = "normal", ""
+        elif tur_ham.startswith(SYMLINK_ONEK):
+            tur, metin_link = "symlink", tur_ham[len(SYMLINK_ONEK):]
+            if not metin_link:
+                raise C1Error(10, "0b", "Symlink hedefi boş", "symlink->hedef", tur_ham)
+        else:
+            raise C1Error(2, "0b", "Bilinmeyen tür", "file|symlink->hedef", tur_ham)
         if tur == "symlink":
-            if grup != "A" or not metin_link:
-                raise C1Error(10, "0b", "Symlink yalnız Grup A ve metinle yazılır", "A + metin", f"{grup} {metin_link!r}")
-        elif metin_link:
-            raise C1Error(2, "0b", "Normal dosyada symlink metni var", "boş", metin_link)
-        if sha and len(sha) != 64:
-            raise C1Error(14, "0b", "Envanter hash alanı 64 karakter değil", "64 veya boş", sha)
-        if boyut < 0:
+            if grup != "A":
+                raise C1Error(10, "0b", "Symlink yalnız A_arastirma grubunda", "A_arastirma", grup_ham)
+            if boyut != 0:
+                raise C1Error(2, "0b", "Symlink boyut_bayt 0 olmalı", "0", boyut)
+        elif boyut < 0:
             raise C1Error(2, "0b", "Negatif boyut", ">=0", boyut)
         arc = yg_yol(yol, cfg.kaynak_kok)
         islemler.append(
@@ -88,11 +100,14 @@ def _ayir(metin: str, cfg: Yapilandirma) -> tuple[list[Islem], list[str]]:
                 yol=yol,
                 arcname=arc,
                 grup=grup,
+                grup_ham=grup_ham,
                 tur=tur,
                 izin=izin,
                 boyut_envanter=boyut,
                 symlink_metin=metin_link,
-                sha_envanter=sha,
+                mtime_trt=mtime_trt,
+                bayrak=bayrak,
+                not_alani=not_alani,
             )
         )
     benzersiz([k.yol for k in islemler], [k.arcname for k in islemler])

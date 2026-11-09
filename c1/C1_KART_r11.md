@@ -19,10 +19,10 @@ Amaç: Araştırma dosyalarını kaynaklara yazmadan üç ayrı TAR'a almak. Ara
 - Envanter 2.908 kayıt. İşlem listesi 2.897: A 1.936, B1 910, B2 51.
 - Normal dosya 2.896, symlink 1.
 - A-ek 11 dosya kapsam dışıdır. Hiçbir adımda open, stat, lstat, yol yoklaması veya arşiv yoktur.
-- MK-5 kapsam dışıdır. Yalnız manifest satırındaki metinsel yoldur. open, read, stat, lstat, hash, arşiv ve envantere ekleme yoktur. Kaynak kökünün içinde olamaz. Çıktı üstünün altında durabilir; R1, R2 ve nihai klasörün içinde duramaz. Gerçek ek yolu `/home/box/agent-data/...` altındadır.
+- MK-5 kapsam dışıdır. Yalnız manifest satırındaki metinsel yoldur. open, read, stat, lstat, hash, arşiv ve envantere ekleme yoktur. Kaynak kökünün, dokunulmaz klasörlerin, geçici klasörün ve nihai klasörün içinde olamaz. Çıktı üstünün başka bir yerinde durabilir. Gerçek ek `/home/box/agent-data/...` altındadır.
 - B1 ve B2 analiz edilmez; yalnız arşivlenir ve KARANTİNA diye işaretlenir.
-- R1 adı `GECERSIZ_c1_arsiv_20261110` korunur. Açılmaz, stat edilmez, yeniden kullanılmaz.
-- R2 adı `GECERSIZ_c1_arsiv_20261110_R2`. Nihai ad `c1_arsiv_20261110`.
+- Dokunulmaz önceki klasörler: `GECERSIZ_c1_arsiv_20261110` (R1) ve `GECERSIZ_c1_arsiv_20261110_R2`. Açılmaz, listelenmez, stat edilmez.
+- Sıradaki geçici klasör yapılandırmadan gelir: `GECERSIZ_c1_arsiv_20261110_R3`. Nihai ad `c1_arsiv_20261110`.
 - Gerçek kaynak kökü `/workspace`. Gerçek çıktı üstü `/home/box`.
 - Gerçek envanter: `/workspace/hypergrok_v2_plan_20261109/C1_DOSYA_LISTESI.csv`.
 - Gerçek R5 dizini: `/workspace/trading-desk-research-v1.7.1/research/intraday-r5-20261109/freeze`.
