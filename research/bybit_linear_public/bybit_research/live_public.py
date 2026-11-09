@@ -39,7 +39,8 @@ class LiveConfig:
     ping_interval_ms: int = 20_000
     pong_timeout_ms: int = 10_000
     receive_stale_ms: int = 5_000
-    exchange_stale_ms: int = 5_000
+    exchange_stale_ms: int = 15_000
+    exchange_future_skew_ms: int = 2_000
     backoff_steps_ms: tuple[int, ...] = (1_000, 2_000, 4_000, 8_000, 16_000)
     backoff_cap_ms: int = 30_000
     max_reconnects: int = 8
@@ -53,6 +54,7 @@ class LiveConfig:
             ("pong_timeout_ms", self.pong_timeout_ms),
             ("receive_stale_ms", self.receive_stale_ms),
             ("exchange_stale_ms", self.exchange_stale_ms),
+            ("exchange_future_skew_ms", self.exchange_future_skew_ms),
             ("backoff_cap_ms", self.backoff_cap_ms),
             ("max_reconnects", self.max_reconnects),
         ):
@@ -133,17 +135,29 @@ class TransitionLog:
 
 
 class ManualClock:
-    def __init__(self, start_ms: int = 0):
+    """Monotonic milliseconds and a separate Unix wall clock.
+
+    `time_ms` is the process clock used for receive age, ping, and the runtime
+    limit. `wall_ms` is compared with Bybit's exchange timestamp. They are not
+    the same quantity.
+    """
+
+    def __init__(self, start_ms: int = 0, wall_ms: int | None = None):
         self.now_ms = start_ms
+        self.wall = start_ms if wall_ms is None else wall_ms
 
     def time_ms(self) -> int:
         return self.now_ms
 
+    def wall_ms(self) -> int:
+        return self.wall
+
     def sleep_ms(self, delay: int) -> None:
-        self.now_ms += delay
+        self.advance(delay)
 
     def advance(self, delay: int) -> None:
         self.now_ms += delay
+        self.wall += delay
 
 
 class PublicFeed:
@@ -181,8 +195,9 @@ class PublicFeed:
             send(client_message("subscribe", [f"tickers.{symbol}"], req_id=symbol))
             self.log.emit(now_ms, symbol, "awaiting_ack", "subscribe sent")
 
-    def on_clock(self, send, now_ms: int) -> None:
-        self._note_freshness(now_ms)
+    def on_clock(self, send, now_ms: int, wall_ms: int | None = None) -> None:
+        wall_ms = now_ms if wall_ms is None else wall_ms
+        self._note_freshness(now_ms, wall_ms)
         if self.phase != "open" or self.stop:
             return
         if self.ping_sent_ms is None and now_ms >= self.ping_due_ms:
@@ -255,10 +270,11 @@ class PublicFeed:
     def note_session_established(self) -> None:
         self.backoff_index = 0
 
-    def status_rows(self, now_ms: int) -> list[dict]:
+    def status_rows(self, now_ms: int, wall_ms: int | None = None) -> list[dict]:
+        wall_ms = now_ms if wall_ms is None else wall_ms
         rows = []
         for symbol in self.config.symbols:
-            state, last, mark, recv_age, exch_age = self._symbol_view(symbol, now_ms)
+            state, last, mark, recv_age, exch_age = self._symbol_view(symbol, now_ms, wall_ms)
             rows.append({
                 "symbol": symbol,
                 "role": "conditional" if symbol in CONDITIONAL else "fixed",
@@ -270,14 +286,15 @@ class PublicFeed:
             })
         return rows
 
-    def feed_state(self, now_ms: int) -> str:
+    def feed_state(self, now_ms: int, wall_ms: int | None = None) -> str:
+        wall_ms = now_ms if wall_ms is None else wall_ms
         if self.shutdown:
             return "STOPPED"
         if self.phase == "heartbeat_timeout":
             return "HEARTBEAT_TIMEOUT"
         if self.phase != "open":
             return "DISCONNECTED"
-        states = [self._symbol_view(symbol, now_ms)[0] for symbol in self.config.symbols]
+        states = [self._symbol_view(symbol, now_ms, wall_ms)[0] for symbol in self.config.symbols]
         if all(state == "LIVE" for state in states):
             return "LIVE"
         if any(state == "LIVE" for state in states):
@@ -307,6 +324,8 @@ class PublicFeed:
         for name in targets:
             book = self.books[name]
             if success:
+                if book.snapshot:
+                    continue
                 book.subscription = "awaiting_snapshot"
                 book.ack_ms = now_ms
                 self.log.emit(now_ms, name, "awaiting_snapshot", "subscribe acknowledged; ticker snapshot not yet received")
@@ -353,7 +372,7 @@ class PublicFeed:
             book.cs = cs
             book.exchange_ts = ts
             book.received_ms = now_ms
-            self.log.emit(now_ms, symbol, "snapshot", "snapshot replaced the local ticker")
+            self.log.emit(now_ms, f"{symbol}:quote", "snapshot", "snapshot replaced the local ticker")
             self.note_session_established()
             return
         if not book.snapshot:
@@ -376,7 +395,7 @@ class PublicFeed:
             book.cs = cs
         book.exchange_ts = ts
         book.received_ms = now_ms
-        self.log.emit(now_ms, symbol, "delta", "delta merged")
+        self.log.emit(now_ms, f"{symbol}:quote", "delta", "delta merged")
 
     def _merge_items(self, book: SymbolBook, items: list[dict], replace: bool) -> None:
         for item in items:
@@ -404,15 +423,17 @@ class PublicFeed:
             book.subscription = "none"
             book.reset_reason = reason
 
-    def _note_freshness(self, now_ms: int) -> None:
+    def _note_freshness(self, now_ms: int, wall_ms: int) -> None:
         for symbol in self.config.symbols:
-            state = self._symbol_view(symbol, now_ms)[0]
-            if state == "STALE":
+            state = self._symbol_view(symbol, now_ms, wall_ms)[0]
+            if state == "LIVE":
+                self.log.emit(now_ms, symbol, "live", "fresh last and mark")
+            elif state == "STALE":
                 self.log.emit(now_ms, symbol, "stale", "quote exceeded the freshness limit")
             elif state == "IDLE":
                 self.log.emit(now_ms, symbol, "idle", "subscription acknowledged but no ticker arrived")
 
-    def _symbol_view(self, symbol: str, now_ms: int) -> tuple[str, str, str, str, str]:
+    def _symbol_view(self, symbol: str, now_ms: int, wall_ms: int) -> tuple[str, str, str, str, str]:
         unavailable = ("UNAVAILABLE", "UNAVAILABLE", "-", "-")
         if self.phase != "open":
             label = "HEARTBEAT_TIMEOUT" if self.phase == "heartbeat_timeout" else "DISCONNECTED"
@@ -429,15 +450,16 @@ class PublicFeed:
         last = book.fields.get("lastPrice")
         mark = book.fields.get("markPrice")
         recv_age = None if book.received_ms is None else now_ms - book.received_ms
-        exch_age = None if book.exchange_ts is None else now_ms - book.exchange_ts
+        exch_age = None if book.exchange_ts is None else wall_ms - book.exchange_ts
         fresh = (
             recv_age is not None and exch_age is not None
-            and recv_age <= self.config.receive_stale_ms
-            and exch_age <= self.config.exchange_stale_ms
-            and exch_age >= 0 and recv_age >= 0
+            and 0 <= recv_age <= self.config.receive_stale_ms
+            and -self.config.exchange_future_skew_ms <= exch_age <= self.config.exchange_stale_ms
         )
+        recv_text = "-" if recv_age is None else str(recv_age)
+        exch_text = "-" if exch_age is None else str(exch_age)
         if not fresh:
-            return ("STALE", *unavailable)
+            return ("STALE", "UNAVAILABLE", "UNAVAILABLE", recv_text, exch_text)
         if last is None or mark is None:
             return (
                 "INCOMPLETE",
@@ -480,8 +502,8 @@ def _ack_symbol(message: dict) -> str | None:
     return None
 
 
-def render_table(feed: PublicFeed, now_ms: int) -> str:
-    state = feed.feed_state(now_ms)
+def render_table(feed: PublicFeed, now_ms: int, wall_ms: int | None = None) -> str:
+    state = feed.feed_state(now_ms, wall_ms)
     lines = [
         "UNSAFE TO TRADE: this table is a public quote display, not an order book, a signal, or protection from trading risk.",
         "SOLUSDT and XRPUSDT are conditional. A live quote does not establish historical research eligibility.",
@@ -489,7 +511,7 @@ def render_table(feed: PublicFeed, now_ms: int) -> str:
         f"feed_state={state}",
         "symbol role state last mark recv_age_ms exch_age_ms",
     ]
-    for row in feed.status_rows(now_ms):
+    for row in feed.status_rows(now_ms, wall_ms):
         lines.append(
             f"{row['symbol']} {row['role']} {row['state']} {row['last']} {row['mark']} {row['recv_age_ms']} {row['exch_age_ms']}"
         )
@@ -542,9 +564,10 @@ def run_feed(feed: PublicFeed, transport, clock, status_every_ms: int = 1000, em
         feed.on_open(transport.send, now)
         while not feed.stop:
             now = clock.time_ms()
+            wall = clock.wall_ms()
             if expired(now):
                 break
-            feed.on_clock(transport.send, now)
+            feed.on_clock(transport.send, now, wall)
             if feed.heartbeat_failed:
                 transport.close()
                 feed.on_disconnect(now, "heartbeat_timeout")
@@ -560,7 +583,7 @@ def run_feed(feed: PublicFeed, transport, clock, status_every_ms: int = 1000, em
             if expired(now):
                 break
             if last_status is None or now - last_status >= status_every_ms:
-                emit(render_table(feed, now))
+                emit(render_table(feed, now, clock.wall_ms()))
                 last_status = now
         if feed.stop:
             break
@@ -573,7 +596,7 @@ def run_feed(feed: PublicFeed, transport, clock, status_every_ms: int = 1000, em
         clock.sleep_ms(feed.next_backoff_ms())
     transport.close()
     feed.on_shutdown(clock.time_ms())
-    emit(render_table(feed, clock.time_ms()))
+    emit(render_table(feed, clock.time_ms(), clock.wall_ms()))
     return feed
 
 
@@ -591,6 +614,9 @@ class WallClock:
 
     def time_ms(self) -> int:
         return int((self._time.monotonic() - self._origin) * 1000)
+
+    def wall_ms(self) -> int:
+        return int(self._time.time() * 1000)
 
     def sleep_ms(self, delay: int) -> None:
         self._time.sleep(max(delay, 0) / 1000)
@@ -634,6 +660,7 @@ def execute_finite_live(argv=None, transport_factory=None, clock=None) -> int:
     parser.add_argument("--event-log")
     parser.add_argument("--receive-stale-ms", type=int, default=5_000)
     parser.add_argument("--exchange-stale-ms", type=int, default=15_000)
+    parser.add_argument("--exchange-future-skew-ms", type=int, default=2_000)
     parser.add_argument("--ping-interval-ms", type=int, default=20_000)
     parser.add_argument("--pong-timeout-ms", type=int, default=10_000)
     parser.add_argument("--max-reconnects", type=int, default=8)
@@ -646,6 +673,7 @@ def execute_finite_live(argv=None, transport_factory=None, clock=None) -> int:
         config = LiveConfig(
             receive_stale_ms=args.receive_stale_ms,
             exchange_stale_ms=args.exchange_stale_ms,
+            exchange_future_skew_ms=args.exchange_future_skew_ms,
             ping_interval_ms=args.ping_interval_ms,
             pong_timeout_ms=args.pong_timeout_ms,
             max_reconnects=args.max_reconnects,

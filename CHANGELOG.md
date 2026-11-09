@@ -4,6 +4,7 @@
 
 + Add isolated, research-only Bybit public-data validation and an offline comparison engine under `research/bybit_linear_public/`. Public GET requests stay on `api.bybit.com`, market-history strategy performance stays refused, and desk profiles, skills, and exchange-write paths are unchanged. Based on HyperGrok Trading Desk v1.7.1.
 + Add a finite public linear ticker display. It sends only public subscribe and ping messages, withholds stale prices, and does not start unless `--seconds` is between 60 and 120.
++ Compare Bybit ticker timestamps with the Unix wall clock. The process monotonic clock stays limited to receive age, ping timing, and the finite run. Quotes older than the exchange limit stay unavailable.
 
 ## 1.7.1 - 2026-11-01
 

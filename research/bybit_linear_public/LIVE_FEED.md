@@ -14,6 +14,6 @@ Stop with Ctrl+C. The process also stops by itself when `--seconds` elapses. It 
 
 The Windows folder [windows_live/README.md](windows_live/README.md) is the self-contained instruction sheet. A zip of that runtime is produced for the operator. It does not need this repository.
 
-Live end-to-end access was not run from the Cloud Agent VM. A Windows REST HTTP 200 does not prove the public WebSocket. SOLUSDT or XRPUSDT appearing in the table does not establish historical research eligibility. Stale and disconnected rows show `UNAVAILABLE` instead of an old price. The table is not a trading signal and does not protect against trading risk.
+Exchange timestamps are compared with the computer's Unix wall clock. The process monotonic clock is used only for receive age, ping timing, and the 60–120 second limit. A quote whose exchange timestamp is older than 15 seconds, or more than 2 seconds ahead of the wall clock, stays unavailable. The component does not set the operating-system clock. A Windows REST HTTP 200 does not prove the public WebSocket. SOLUSDT or XRPUSDT appearing in the table does not establish historical research eligibility. Stale and disconnected rows show `UNAVAILABLE` instead of an old price. The table is not a trading signal and does not protect against trading risk.
 
 Documented socket: `wss://stream.bybit.com/v5/public/linear`. Topics: `tickers.{symbol}`. Client control messages are `subscribe` and `ping` only. See the Bybit V5 public ticker and connect pages.

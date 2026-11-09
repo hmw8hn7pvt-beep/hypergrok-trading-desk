@@ -217,6 +217,45 @@ class LiveFeedTests(unittest.TestCase):
         self.assertEqual(len(bad), 2)
         self.assertEqual(self.feed.books["XRPUSDT"].subscription, "awaiting_ack")
 
+    def test_process_clock_is_not_subtracted_from_exchange_unix_time(self):
+        # Windows health log: socket_open t_ms=2437, snapshot t_ms=2638, stale t_ms=2695.
+        # Those are monotonic milliseconds since process start, not Unix time.
+        clock = ManualClock(2437, wall_ms=1_762_650_000_000)
+        feed = PublicFeed(LiveConfig(
+            receive_stale_ms=5_000, exchange_stale_ms=15_000, exchange_future_skew_ms=2_000,
+        ))
+        feed.on_open(lambda _text: None, clock.time_ms())
+        exchange_ts = clock.wall_ms() - 80
+        feed.on_message(ack("BTCUSDT"), clock.time_ms())
+        feed.on_message(tick("BTCUSDT", "snapshot", {"lastPrice": "100", "markPrice": "101"}, exchange_ts, 1), clock.time_ms())
+        clock.advance(258)
+        now = clock.time_ms()
+        self.assertEqual(now, 2695)
+        broken_age = now - exchange_ts
+        self.assertLess(broken_age, -1_000_000_000)
+        row = feed.status_rows(now, clock.wall_ms())[0]
+        self.assertEqual(row["state"], "LIVE")
+        self.assertEqual(row["last"], "100")
+        self.assertEqual(row["mark"], "101")
+        self.assertLess(int(row["exch_age_ms"]), 15_000)
+
+    def test_old_or_future_exchange_time_stays_unavailable(self):
+        wall = 1_762_650_000_000
+        clock = ManualClock(0, wall_ms=wall)
+        feed = PublicFeed(LiveConfig(exchange_stale_ms=15_000, exchange_future_skew_ms=2_000, receive_stale_ms=5_000))
+        feed.on_open(lambda _text: None, 0)
+        feed.on_message(ack("BTCUSDT"), 0)
+        feed.on_message(tick("BTCUSDT", "snapshot", {"lastPrice": "100", "markPrice": "101"}, wall - 20_000, 1), 0)
+        old = feed.status_rows(0, wall)[0]
+        self.assertEqual(old["state"], "STALE")
+        self.assertEqual(old["last"], "UNAVAILABLE")
+        self.assertEqual(old["exch_age_ms"], "20000")
+        feed.on_message(tick("BTCUSDT", "snapshot", {"lastPrice": "100", "markPrice": "101"}, wall + 60_000, 2), 0)
+        ahead = feed.status_rows(0, wall)[0]
+        self.assertEqual(ahead["state"], "STALE")
+        self.assertEqual(ahead["last"], "UNAVAILABLE")
+        self.assertEqual(ahead["exch_age_ms"], "-60000")
+
     def test_finite_run_shuts_down_without_a_socket(self):
         clock = ManualClock(0)
         transport = ScriptTransport(clock, [("advance", 60_000)])

@@ -36,6 +36,7 @@ def main(argv=None) -> int:
     live.add_argument("--event-log")
     live.add_argument("--receive-stale-ms", type=int, default=5_000)
     live.add_argument("--exchange-stale-ms", type=int, default=15_000)
+    live.add_argument("--exchange-future-skew-ms", type=int, default=2_000)
     live.add_argument("--ping-interval-ms", type=int, default=20_000)
     live.add_argument("--pong-timeout-ms", type=int, default=10_000)
     live.add_argument("--max-reconnects", type=int, default=8)

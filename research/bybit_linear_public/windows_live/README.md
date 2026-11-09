@@ -12,7 +12,7 @@ Zip'i açın. Bu dosyanın bulunduğu klasörde:
 
 ```text
 py -3 --version
-py -3 live_check.py --confirm-public-network --seconds 90 --receive-stale-ms 5000 --exchange-stale-ms 15000 --event-log live-health.jsonl
+py -3 live_check.py --confirm-public-network --seconds 90 --receive-stale-ms 5000 --exchange-stale-ms 15000 --exchange-future-skew-ms 2000 --event-log live-health.jsonl
 ```
 
 `--seconds` 60, 90 veya 120 olabilir. Aralık dışındaki değer ve bayraksız çağrı soket açmaz. Süreç 90 saniye sonra kendiliğinden durur.
@@ -23,7 +23,7 @@ Pencere açıkken Ctrl+C. Süreç fiyatları gizler ve çıkar. Görev zamanlay�
 
 ## Tablo
 
-`LIVE` yalnız taze last ve mark varsa görünür. `AWAITING_ACK` abonelik onayı değildir. `AWAITING_SNAPSHOT` onay vardır, fiyat yoktur. `IDLE` onaydan sonra veri gelmemiştir. `STALE`, `DISCONNECTED` ve `HEARTBEAT_TIMEOUT` eski fiyatı güncel diye göstermez; hücre `UNAVAILABLE` olur. `PARTIAL` bazı semboller tazedir. SOLUSDT ve XRPUSDT satırında `conditional` yazar. Canlı görünmeleri tarihsel araştırma uygunluğu değildir.
+`LIVE` yalnız taze last ve mark varsa görünür. Alım yaşı, sürecin monoton saatine göredir. Borsa yaşı, bilgisayarın Unix duvar saati eksi Bybit `ts` değeridir. Bu iki saat birbirine çıkarılmaz. `--exchange-stale-ms` (varsayılan 15000) aşılmış veya borsa damgası duvar saatinden `--exchange-future-skew-ms` (varsayılan 2000) fazla ilerideyse fiyat `UNAVAILABLE` kalır. Program Windows saatini değiştirmez. `AWAITING_ACK` abonelik onayı değildir. `AWAITING_SNAPSHOT` onay vardır, fiyat yoktur. `IDLE` onaydan sonra veri gelmemiştir. `STALE`, `DISCONNECTED` ve `HEARTBEAT_TIMEOUT` eski fiyatı güncel diye göstermez. `PARTIAL` bazı semboller tazedir. SOLUSDT ve XRPUSDT satırında `conditional` yazar. Canlı görünmeleri tarihsel araştırma uygunluğu değildir.
 
 `live-health.jsonl` yalnız bu klasörde, durum değişimlerini tutar. Dışarı mesaj göndermez.
 
