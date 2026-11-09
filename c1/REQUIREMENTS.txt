@@ -1,0 +1,4 @@
+# C-1 yalnızca Python standart kütüphanesini kullanır.
+# Üçüncü taraf paket yoktur.
+# Gerçek çalışma için kartın istediği sürüm: Python 3.13.5
+# Farklı bir sürümde gerçek mod, kaynak veya çıktı kökü açılmadan durur.
